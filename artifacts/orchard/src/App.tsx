@@ -43,11 +43,11 @@ const NAV = [
 type ItemKey = "sazhenec" | "uchastok" | "avtopoliv" | "avtosbor" | "udobrenie";
 
 const SHOP_ITEMS: { key: ItemKey; img: string; label: string }[] = [
-  { key: "sazhenec",  img: "/ItemSazhenec.png",  label: "Саженец"   },
-  { key: "uchastok",  img: "/ItemUchastok.png",  label: "Участок"   },
-  { key: "avtopoliv", img: "/ItemAvtopoliv.png",  label: "Автополив" },
-  { key: "avtosbor",  img: "/ItemAvtosbor.png",  label: "Автосбор"  },
-  { key: "udobrenie", img: "/ItemUdobrenie.png",  label: "Удобрение" },
+  { key: "sazhenec",  img: "/ItemSazhenec.webp",  label: "Саженец"   },
+  { key: "uchastok",  img: "/ItemUchastok.webp",  label: "Участок"   },
+  { key: "avtopoliv", img: "/ItemAvtopoliv.webp",  label: "Автополив" },
+  { key: "avtosbor",  img: "/ItemAvtosbor.webp",  label: "Автосбор"  },
+  { key: "udobrenie", img: "/ItemUdobrenie.webp",  label: "Удобрение" },
 ];
 
 /* ─── Number formatter ─────────────────────────────────────────── */
@@ -321,7 +321,7 @@ function CloseBtn({ onClose }: { onClose: () => void }) {
       onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
       onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
     >
-      <img src="/KnopkaX.png" alt="Закрыть" draggable={false}
+      <img src="/KnopkaX.webp" alt="Закрыть" draggable={false}
         style={{ width: "100%", display: "block", userSelect: "none" }} />
     </button>
   );
@@ -558,9 +558,8 @@ function ShopScreen() {
   return (
     <GameShell bg="/FonMAGAZIN.webp">
       <CloseBtn onClose={() => navigate("/")} />
-      <ScreenHeader src="/HeaderMAGAZIN.png" alt="Магазин" />
+      <ScreenHeader src="/HeaderMAGAZIN.webp" alt="Магазин" />
 
-      {/* Scrollable product grid */}
       <div style={{
         position: "absolute",
         top: "14%", left: "3%", right: "3%", bottom: "2%",
@@ -568,25 +567,24 @@ function ShopScreen() {
         scrollbarWidth: "none",
       }}>
         <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          display: "flex", flexDirection: "column",
           gap: "3%",
-          padding: "2% 2% 4%",
+          padding: "2% 1% 4%",
         }}>
           {SHOP_ITEMS.map((item) => (
-            <div key={item.key} style={{
-              display: "flex", flexDirection: "column", alignItems: "center", gap: "6%",
-            }}>
-              {/* Product block image */}
+            <div key={item.key} style={{ position: "relative", width: "100%" }}>
               <img src={item.img} alt={item.label} draggable={false}
                 style={{ width: "100%", display: "block", userSelect: "none" }} />
-
-              {/* Buy button */}
               <PressBtn
                 onClick={() => handleBuy(item.key)}
-                style={{ width: "80%" }}
+                style={{
+                  position: "absolute",
+                  right: "2%", top: "50%",
+                  transform: "translateY(-50%)",
+                  width: "22%",
+                }}
               >
-                <img src="/KnopkaKUPIT.png" alt="Купить" draggable={false}
+                <img src="/KnopkaKUPIT.webp" alt="Купить" draggable={false}
                   style={{ width: "100%", display: "block", userSelect: "none" }} />
               </PressBtn>
             </div>
@@ -636,10 +634,12 @@ function WarehouseScreen() {
     });
   }
 
+  const ownedItems = SHOP_ITEMS.filter((item) => persisted.inventory[item.key] > 0);
+
   return (
     <GameShell bg="/FonSKLAD.webp">
       <CloseBtn onClose={() => navigate("/")} />
-      <ScreenHeader src="/HeaderSKLAD.png" alt="Склад" />
+      <ScreenHeader src="/HeaderSKLAD.webp" alt="Склад" />
 
       <div style={{
         position: "absolute",
@@ -648,49 +648,61 @@ function WarehouseScreen() {
         scrollbarWidth: "none",
       }}>
         <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          display: "flex", flexDirection: "column",
           gap: "3%",
-          padding: "2% 2% 4%",
+          padding: "2% 1% 4%",
         }}>
-          {SHOP_ITEMS.map((item) => {
+          {ownedItems.length === 0 && (
+            <div style={{
+              color: "rgba(255,255,255,0.7)",
+              fontSize: "4.5cqw", fontWeight: "600",
+              textAlign: "center", marginTop: "20%",
+              textShadow: "0 1px 6px rgba(0,0,0,0.8)",
+            }}>
+              Склад пуст
+            </div>
+          )}
+          {ownedItems.map((item) => {
             const count = persisted.inventory[item.key];
             const isSazhenec = item.key === "sazhenec";
-            const disabled = isSazhenec && !plotFree;
-            const useImg = disabled ? "/KnopkaISPOLZOVAT2.png" : "/KnopkaISPOLZOVAT.png";
+            const plotBusy = isSazhenec && !plotFree;
+            const useImg = plotBusy
+              ? "/KnopkaISPOLZOVAT2.webp"
+              : "/KnopkaISPOLZOVAT.webp";
 
             return (
-              <div key={item.key} style={{
-                display: "flex", flexDirection: "column", alignItems: "center", gap: "6%",
-                position: "relative",
-              }}>
-                {/* Product block image */}
-                <div style={{ position: "relative", width: "100%" }}>
-                  <img src={item.img} alt={item.label} draggable={false}
-                    style={{ width: "100%", display: "block", userSelect: "none" }} />
-                  {/* Count badge */}
-                  <div style={{
-                    position: "absolute", top: "6%", right: "6%",
-                    background: "rgba(0,0,0,0.65)",
-                    color: "#fff",
-                    fontSize: "4.5cqw", fontWeight: "800",
-                    borderRadius: "50%",
-                    minWidth: "7cqw", minHeight: "7cqw",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    padding: "0.5cqw 1.2cqw",
-                    border: "0.4cqw solid rgba(255,255,255,0.3)",
-                    lineHeight: 1,
-                    pointerEvents: "none",
-                  }}>
-                    {count}
-                  </div>
+              <div key={item.key} style={{ position: "relative", width: "100%" }}>
+                <img src={item.img} alt={item.label} draggable={false}
+                  style={{ width: "100%", display: "block", userSelect: "none" }} />
+
+                {/* Count badge */}
+                <div style={{
+                  position: "absolute", left: "3%", top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "rgba(0,0,0,0.65)",
+                  color: "#fff",
+                  fontSize: "4.5cqw", fontWeight: "800",
+                  borderRadius: "2cqw",
+                  padding: "0.5cqw 1.5cqw",
+                  border: "0.3cqw solid rgba(255,255,255,0.3)",
+                  lineHeight: 1,
+                  pointerEvents: "none",
+                  minWidth: "5cqw",
+                  textAlign: "center",
+                }}>
+                  {count}
                 </div>
 
                 {/* Use button */}
                 <PressBtn
                   onClick={() => handleUse(item.key)}
-                  disabled={count === 0 || disabled}
-                  style={{ width: "80%", opacity: count === 0 ? 0.5 : 1 }}
+                  disabled={plotBusy}
+                  style={{
+                    position: "absolute",
+                    right: "2%", top: "50%",
+                    transform: "translateY(-50%)",
+                    width: "22%",
+                  }}
                 >
                   <img src={useImg} alt="Использовать" draggable={false}
                     style={{ width: "100%", display: "block", userSelect: "none" }} />
