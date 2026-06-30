@@ -361,24 +361,30 @@ function PressBtn({
   children: React.ReactNode;
   disabled?: boolean;
 }) {
+  /* The outer element owns position/transform for layout.
+     The inner span owns the scale animation so they never conflict. */
+  const innerRef = useRef<HTMLSpanElement>(null);
+
+  function scaleInner(v: string) {
+    if (innerRef.current) innerRef.current.style.transform = v;
+  }
+
   return (
-    <button
+    <div
       onClick={disabled ? undefined : onClick}
-      disabled={disabled}
       style={{
-        padding: 0, border: "none", background: "transparent",
-        cursor: disabled ? "default" : "pointer",
-        transition: "transform 0.12s",
+        padding: 0, cursor: disabled ? "default" : "pointer",
+        userSelect: "none",
         ...style,
       }}
-      onPointerDown={(e) => {
-        if (!disabled) (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.92)";
-      }}
-      onPointerUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
-      onPointerLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+      onPointerDown={() => { if (!disabled) scaleInner("scale(0.92)"); }}
+      onPointerUp={()   => scaleInner("scale(1)")}
+      onPointerLeave={() => scaleInner("scale(1)")}
     >
-      {children}
-    </button>
+      <span ref={innerRef} style={{ display: "block", transition: "transform 0.12s", transformOrigin: "center" }}>
+        {children}
+      </span>
+    </div>
   );
 }
 
