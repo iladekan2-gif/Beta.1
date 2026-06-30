@@ -19,6 +19,9 @@ const GROWTH_PHASES: { img: string; duration: number }[] = [
   { img: "/DerevoFaza8.webp", duration: 30  },
 ];
 
+/* All phase images are 660×700 — same aspect ratio used as a stable container */
+const PHASE_ASPECT = "660 / 700";
+
 const PHASE6_IDX         = 5;
 const HARVEST_PHASE_IDX  = 6;
 const WINDDOWN_PHASE_IDX = 7;
@@ -84,7 +87,7 @@ function emptyPlot(): PlotState {
 
 function resolvePlot(plot: PlotState, now: number): PlotState {
   let cur = { ...plot };
-  while (true) {
+  for (;;) {
     if (cur.gameState === "idle") break;
     const duration = cur.gameState === "planting"
       ? PLANTING_DURATION
@@ -97,11 +100,9 @@ function resolvePlot(plot: PlotState, now: number): PlotState {
       cur = { ...cur, gameState: "growing", phaseIdx: 0, phaseStartedAt: nextStart };
     } else {
       const nextIdx = cur.phaseIdx + 1;
-      if (nextIdx < GROWTH_PHASES.length) {
-        cur = { ...cur, phaseIdx: nextIdx, phaseStartedAt: nextStart };
-      } else {
-        cur = { ...cur, phaseIdx: PHASE6_IDX, phaseStartedAt: nextStart };
-      }
+      cur = nextIdx < GROWTH_PHASES.length
+        ? { ...cur, phaseIdx: nextIdx, phaseStartedAt: nextStart }
+        : { ...cur, phaseIdx: PHASE6_IDX, phaseStartedAt: nextStart };
     }
   }
   return cur;
@@ -111,7 +112,7 @@ function resolveState(s: PersistedState, now: number): PersistedState {
   return { ...s, plots: s.plots.map((p) => resolvePlot(p, now)) };
 }
 
-const STORAGE_KEY = "orchard_v7";
+const STORAGE_KEY = "orchard_v8";
 
 function loadState(): PersistedState {
   try {
@@ -121,8 +122,7 @@ function loadState(): PersistedState {
   return {
     plots: [emptyPlot()],
     currentPlotIdx: 0,
-    cedro: 0,
-    fruit: 0,
+    cedro: 0, fruit: 0,
     inventory: { sazhenec: 0, uchastok: 0, avtopoliv: 0, avtosbor: 0, udobrenie: 0 },
   };
 }
@@ -131,91 +131,46 @@ function saveState(s: PersistedState) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
 }
 
-/* ─── Planting countdown ────────────────────────────────────────── */
-function PlantingTimer({ phaseStartedAt }: { phaseStartedAt: number }) {
-  const [remaining, setRemaining] = useState(() =>
-    Math.max(0, PLANTING_DURATION - (Date.now() - phaseStartedAt) / 1000)
-  );
-  useEffect(() => {
-    const id = setInterval(() => {
-      setRemaining(Math.max(0, PLANTING_DURATION - (Date.now() - phaseStartedAt) / 1000));
-    }, 250);
-    return () => clearInterval(id);
-  }, [phaseStartedAt]);
-  const r = Math.ceil(remaining);
-  const dashOffset = CIRCUMFERENCE * (1 - remaining / PLANTING_DURATION);
+/* ─── Game shell ─────────────────────────────────────────────────
+   The inner container is 9:16 (contain mode — no cropping of UI).
+   Outside the container, a blurred/darkened version of the same
+   background fills the viewport instead of ugly black bars.
+──────────────────────────────────────────────────────────────── */
+function GameShell({ children, bg = "/FonOSNOVNOI.webp" }: { children?: React.ReactNode; bg?: string }) {
   return (
-    <div style={{
-      position: "absolute", left: "50%", bottom: "38%",
-      transform: "translateX(-50%)",
-      width: "13%", aspectRatio: "1",
-      zIndex: 25, pointerEvents: "none",
-    }}>
-      <svg viewBox="0 0 100 100" style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
-        <circle cx="50" cy="50" r="40" fill="rgba(0,0,0,0.45)" stroke="rgba(255,255,255,0.15)" strokeWidth="8" />
-        <circle cx="50" cy="50" r="40" fill="none"
-          stroke="#f4c842" strokeWidth="8"
-          strokeDasharray={CIRCUMFERENCE}
-          strokeDashoffset={dashOffset}
-          strokeLinecap="round"
-          style={{ transition: "stroke-dashoffset 0.22s linear" }} />
-      </svg>
-      <span style={{
-        position: "absolute", inset: 0,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        color: "#fff", fontSize: "3.2cqw", fontWeight: "700",
-        textShadow: "0 1px 4px rgba(0,0,0,0.9)", lineHeight: 1,
-      }}>{r}</span>
-    </div>
-  );
-}
-
-/* ─── Harvest pop label ─────────────────────────────────────────── */
-interface HarvestPop { id: number; amount: number }
-
-function HarvestPopLabel({ amount, onDone }: { amount: number; onDone: () => void }) {
-  useEffect(() => { const t = setTimeout(onDone, 1400); return () => clearTimeout(t); }, [onDone]);
-  return (
-    <div style={{
-      position: "absolute", left: "50%", bottom: "52%",
-      transform: "translateX(-50%)",
-      zIndex: 40, pointerEvents: "none",
-      animation: "harvestPop 1.4s ease-out forwards",
-      color: "#f4c842", fontSize: "7cqw", fontWeight: "800",
-      textShadow: "0 2px 8px rgba(0,0,0,0.8), 0 0 20px rgba(244,200,66,0.6)",
-      whiteSpace: "nowrap",
-    }}>+{fmt(amount)}</div>
-  );
-}
-
-/* ─── Static background ─────────────────────────────────────────── */
-const StaticBackground = ({ src = "/FonOSNOVNOI.webp" }: { src?: string }) => (
-  <div style={{
-    position: "absolute", inset: 0,
-    backgroundImage: `url('${src}')`,
-    backgroundSize: "cover", backgroundPosition: "center",
-    backgroundRepeat: "no-repeat", zIndex: 0,
-  }} />
-);
-
-/* ─── Game shell ────────────────────────────────────────────────── */
-function GameShell({ children, bg }: { children?: React.ReactNode; bg?: string }) {
-  return (
-    <div style={{
-      width: "100vw", height: "100vh",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      background: "#000", overflow: "hidden",
-    }}>
+    <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
+      {/* Blurred ambient background — fills the letterbox bars area */}
       <div style={{
-        position: "relative",
-        aspectRatio: "1080 / 1920",
-        height: "100vh",
-        maxWidth: "100vw",
-        maxHeight: "calc(100vw * 1920 / 1080)",
-        overflow: "hidden", flexShrink: 0,
+        position: "absolute",
+        inset: "-8%",           /* slightly oversize to avoid blur edge */
+        backgroundImage: `url('${bg}')`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+        filter: "blur(14px) brightness(0.45)",
+        zIndex: 0,
+      }} />
+
+      {/* 9:16 game container — centred, never crops critical UI */}
+      <div style={{
+        position: "absolute",
+        top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        /* Contain: fit within viewport maintaining 9:16 */
+        width:  "min(100vw, calc(100vh * 9 / 16))",
+        height: "min(100vh, calc(100vw * 16 / 9))",
+        overflow: "hidden",
         containerType: "inline-size",
+        zIndex: 1,
       }}>
-        <StaticBackground src={bg} />
+        {/* Actual background */}
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 0,
+          backgroundImage: `url('${bg}')`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }} />
         {children}
       </div>
     </div>
@@ -291,21 +246,24 @@ function NavBar() {
 
 /* ─── Close button ──────────────────────────────────────────────── */
 function CloseBtn({ onClose }: { onClose: () => void }) {
+  const innerRef = useRef<HTMLSpanElement>(null);
   return (
-    <button aria-label="Закрыть" onClick={onClose}
+    <div aria-label="Закрыть" onClick={onClose}
       style={{
         position: "absolute", top: "3%", left: "4%",
         width: "11%", aspectRatio: "1",
-        padding: 0, border: "none", background: "transparent",
-        cursor: "pointer", zIndex: 35, transition: "transform 0.12s",
+        cursor: "pointer", zIndex: 35,
+        userSelect: "none",
       }}
-      onPointerDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.9)"; }}
-      onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
-      onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+      onPointerDown={() => { if (innerRef.current) innerRef.current.style.transform = "scale(0.9)"; }}
+      onPointerUp={()   => { if (innerRef.current) innerRef.current.style.transform = "scale(1)"; }}
+      onPointerLeave={() => { if (innerRef.current) innerRef.current.style.transform = "scale(1)"; }}
     >
-      <img src="/KnopkaX.webp" alt="Закрыть" draggable={false}
-        style={{ width: "100%", display: "block", userSelect: "none" }} />
-    </button>
+      <span ref={innerRef} style={{ display: "block", transition: "transform 0.12s", transformOrigin: "center" }}>
+        <img src="/KnopkaX.webp" alt="Закрыть" draggable={false} loading="eager"
+          style={{ width: "100%", display: "block", userSelect: "none" }} />
+      </span>
+    </div>
   );
 }
 
@@ -317,13 +275,13 @@ function ScreenHeader({ src, alt }: { src: string; alt: string }) {
       transform: "translateX(-50%)",
       width: "50%", zIndex: 34, pointerEvents: "none",
     }}>
-      <img src={src} alt={alt} draggable={false}
+      <img src={src} alt={alt} draggable={false} loading="eager"
         style={{ width: "100%", display: "block", userSelect: "none" }} />
     </div>
   );
 }
 
-/* ─── Press button (animation on inner span, outer keeps position) ─ */
+/* ─── Press button (inner span handles scale, outer keeps position) ─ */
 function PressBtn({
   onClick, style, children, disabled,
 }: {
@@ -349,37 +307,33 @@ function PressBtn({
   );
 }
 
-/* ─── Arrow button (plain, image to be added later) ────────────── */
-function ArrowBtn({ direction, onClick, visible }: { direction: "left" | "right"; onClick: () => void; visible: boolean }) {
+/* ─── Arrow navigation button ───────────────────────────────────── */
+function ArrowBtn({
+  direction, onClick, visible,
+}: { direction: "left" | "right"; onClick: () => void; visible: boolean }) {
   const innerRef = useRef<HTMLSpanElement>(null);
   const scale = (v: string) => { if (innerRef.current) innerRef.current.style.transform = v; };
   if (!visible) return null;
+  const src = direction === "left" ? "/StrelkaLeft.webp" : "/StrelkaRight.webp";
   return (
     <div
       onClick={onClick}
       style={{
         position: "absolute",
-        top: "50%", transform: "translateY(-50%)",
-        [direction === "left" ? "left" : "right"]: "1.5%",
-        width: "11%", aspectRatio: "1",
+        /* Vertically centred on the plot image */
+        bottom: "32%",
+        [direction === "left" ? "left" : "right"]: "1%",
+        width: "13%",
+        aspectRatio: "1",
         zIndex: 28, cursor: "pointer", userSelect: "none",
-        display: "flex", alignItems: "center", justifyContent: "center",
       }}
       onPointerDown={() => scale("scale(0.88)")}
       onPointerUp={()   => scale("scale(1)")}
       onPointerLeave={() => scale("scale(1)")}
     >
-      <span ref={innerRef} style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        transition: "transform 0.12s", transformOrigin: "center",
-        width: "100%", height: "100%",
-        background: "rgba(0,0,0,0.45)",
-        borderRadius: "50%",
-        color: "#fff", fontSize: "6cqw", fontWeight: "900",
-        border: "0.5cqw solid rgba(255,255,255,0.35)",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
-      }}>
-        {direction === "left" ? "◀" : "▶"}
+      <span ref={innerRef} style={{ display: "block", transition: "transform 0.12s", transformOrigin: "center" }}>
+        <img src={src} alt={direction === "left" ? "◀" : "▶"} draggable={false}
+          style={{ width: "100%", display: "block", userSelect: "none" }} />
       </span>
     </div>
   );
@@ -390,19 +344,76 @@ function PlotDots({ total, current }: { total: number; current: number }) {
   if (total <= 1) return null;
   return (
     <div style={{
-      position: "absolute", bottom: "19%", left: "50%",
+      position: "absolute", bottom: "18%", left: "50%",
       transform: "translateX(-50%)",
-      display: "flex", gap: "1.2cqw", zIndex: 28, pointerEvents: "none",
+      display: "flex", gap: "1.5cqw", zIndex: 28, pointerEvents: "none",
     }}>
       {Array.from({ length: total }).map((_, i) => (
         <div key={i} style={{
-          width: "2.2cqw", height: "2.2cqw", borderRadius: "50%",
-          background: i === current ? "#f4c842" : "rgba(255,255,255,0.45)",
-          boxShadow: i === current ? "0 0 6px rgba(244,200,66,0.8)" : "none",
+          width: "2.5cqw", height: "2.5cqw", borderRadius: "50%",
+          background: i === current ? "#f4c842" : "rgba(255,255,255,0.5)",
+          boxShadow: i === current ? "0 0 6px rgba(244,200,66,0.9)" : "none",
           transition: "background 0.2s",
         }} />
       ))}
     </div>
+  );
+}
+
+/* ─── Planting countdown ─────────────────────────────────────────── */
+function PlantingTimer({ phaseStartedAt }: { phaseStartedAt: number }) {
+  const [remaining, setRemaining] = useState(() =>
+    Math.max(0, PLANTING_DURATION - (Date.now() - phaseStartedAt) / 1000)
+  );
+  useEffect(() => {
+    const id = setInterval(() => {
+      setRemaining(Math.max(0, PLANTING_DURATION - (Date.now() - phaseStartedAt) / 1000));
+    }, 250);
+    return () => clearInterval(id);
+  }, [phaseStartedAt]);
+  const r = Math.ceil(remaining);
+  const dashOffset = CIRCUMFERENCE * (1 - remaining / PLANTING_DURATION);
+  return (
+    <div style={{
+      position: "absolute", left: "50%", bottom: "37%",
+      transform: "translateX(-50%)",
+      width: "13%", aspectRatio: "1",
+      zIndex: 25, pointerEvents: "none",
+    }}>
+      <svg viewBox="0 0 100 100" style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
+        <circle cx="50" cy="50" r="40" fill="rgba(0,0,0,0.45)" stroke="rgba(255,255,255,0.15)" strokeWidth="8" />
+        <circle cx="50" cy="50" r="40" fill="none"
+          stroke="#f4c842" strokeWidth="8"
+          strokeDasharray={CIRCUMFERENCE}
+          strokeDashoffset={dashOffset}
+          strokeLinecap="round"
+          style={{ transition: "stroke-dashoffset 0.22s linear" }} />
+      </svg>
+      <span style={{
+        position: "absolute", inset: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: "#fff", fontSize: "3.2cqw", fontWeight: "700",
+        textShadow: "0 1px 4px rgba(0,0,0,0.9)", lineHeight: 1,
+      }}>{r}</span>
+    </div>
+  );
+}
+
+/* ─── Harvest pop label ─────────────────────────────────────────── */
+interface HarvestPop { id: number; amount: number }
+
+function HarvestPopLabel({ amount, onDone }: { amount: number; onDone: () => void }) {
+  useEffect(() => { const t = setTimeout(onDone, 1400); return () => clearTimeout(t); }, [onDone]);
+  return (
+    <div style={{
+      position: "absolute", left: "50%", bottom: "52%",
+      transform: "translateX(-50%)",
+      zIndex: 40, pointerEvents: "none",
+      animation: "harvestPop 1.4s ease-out forwards",
+      color: "#f4c842", fontSize: "7cqw", fontWeight: "800",
+      textShadow: "0 2px 8px rgba(0,0,0,0.8), 0 0 20px rgba(244,200,66,0.6)",
+      whiteSpace: "nowrap",
+    }}>+{fmt(amount)}</div>
   );
 }
 
@@ -422,6 +433,7 @@ function Game() {
   const { plots, currentPlotIdx, cedro, fruit } = persisted;
   const currentPlot = plots[currentPlotIdx] ?? emptyPlot();
   const { gameState, phaseIdx } = currentPlot;
+  const hasSeedling = persisted.inventory.sazhenec > 0;
 
   const anyActive = plots.some((p) => p.gameState !== "idle");
 
@@ -438,35 +450,42 @@ function Game() {
     return () => clearInterval(id);
   }, [anyActive]);
 
+  /* Phase image: all phases share a fixed-size container (660×700 aspect)
+     anchored at the bottom so images never shift between transitions. */
   const plotImg = gameState === "idle" || gameState === "planting"
     ? "/DerevoFaza0.webp"
     : GROWTH_PHASES[phaseIdx]?.img ?? GROWTH_PHASES[GROWTH_PHASES.length - 1].img;
 
   const showHarvestBtn = gameState === "growing" && phaseIdx === HARVEST_PHASE_IDX;
 
-  function updateCurrentPlot(updater: (p: PlotState) => PlotState) {
-    setPersisted((s) => {
-      const newPlots = s.plots.map((p, i) => i === s.currentPlotIdx ? updater(p) : p);
-      return { ...s, plots: newPlots };
-    });
-  }
-
   function handlePlant() {
-    updateCurrentPlot((p) => ({
-      ...p, gameState: "planting", phaseIdx: 0, phaseStartedAt: Date.now(),
-    }));
+    if (!hasSeedling) return;
+    setPersisted((p) => {
+      const newPlots = p.plots.map((pl, i) =>
+        i === p.currentPlotIdx
+          ? { ...pl, gameState: "planting" as GameState, phaseIdx: 0, phaseStartedAt: Date.now() }
+          : pl
+      );
+      return {
+        ...p,
+        plots: newPlots,
+        inventory: { ...p.inventory, sazhenec: p.inventory.sazhenec - 1 },
+      };
+    });
   }
 
   function handleHarvest() {
     const id = ++popIdRef.current;
     setTimeout(() => { setPops((prev) => [...prev, { id, amount: BASE_YIELD }]); }, 0);
-    setPersisted((s) => {
-      const newPlots = s.plots.map((p, i) => i === s.currentPlotIdx
-        ? { ...p, fruit: (s.fruit), phaseIdx: WINDDOWN_PHASE_IDX, phaseStartedAt: Date.now(), harvestPresses: p.harvestPresses + 1 }
-        : p
-      );
-      return { ...s, plots: newPlots, fruit: s.fruit + BASE_YIELD };
-    });
+    setPersisted((s) => ({
+      ...s,
+      fruit: s.fruit + BASE_YIELD,
+      plots: s.plots.map((p, i) =>
+        i === s.currentPlotIdx
+          ? { ...p, phaseIdx: WINDDOWN_PHASE_IDX, phaseStartedAt: Date.now(), harvestPresses: p.harvestPresses + 1 }
+          : p
+      ),
+    }));
   }
 
   function goLeft()  { setPersisted((s) => ({ ...s, currentPlotIdx: Math.max(0, s.currentPlotIdx - 1) })); }
@@ -485,34 +504,48 @@ function Game() {
       <GameShell>
         <TopBar cedro={cedro} fruit={fruit} />
 
-        {/* Tree / plot image — 20% larger than original 78% */}
-        <div style={{ position: "absolute", inset: 0, zIndex: 15, pointerEvents: "none" }}>
+        {/* Phase image — fixed 660:700 container anchored at bottom.
+            All phases occupy the exact same rectangle → no visual shift. */}
+        <div style={{
+          position: "absolute",
+          left: "50%",
+          bottom: "19.2%",
+          width: "93.6%",
+          aspectRatio: PHASE_ASPECT,
+          transform: "translateX(-50%)",
+          zIndex: 15,
+          pointerEvents: "none",
+        }}>
           <img
             src={plotImg}
             alt="Growth phase"
             draggable={false}
             style={{
-              position: "absolute",
-              left: "50%", bottom: "19.2%",
-              width: "93.6%",
-              transform: "translateX(-50%) scaleY(1.2)",
-              transformOrigin: "bottom center",
-              pointerEvents: "none", userSelect: "none",
+              position: "absolute", inset: 0,
+              width: "100%", height: "100%",
+              objectFit: "fill",
+              userSelect: "none",
             }}
           />
         </div>
 
-        {/* Shovel button (idle plot only) */}
+        {/* Shovel button — active only when player has a seedling */}
         {gameState === "idle" && (
-          <button aria-label="Посадить саженец" onClick={handlePlant}
+          <button
+            aria-label="Посадить саженец"
+            onClick={hasSeedling ? handlePlant : undefined}
             style={{
               position: "absolute", left: "50%", bottom: "37%",
               transform: "translateX(-50%)",
               width: "14%", aspectRatio: "1",
               padding: 0, border: "none", background: "transparent",
-              cursor: "pointer", zIndex: 25, transition: "transform 0.12s",
+              cursor: hasSeedling ? "pointer" : "default",
+              zIndex: 25, transition: "transform 0.12s",
+              opacity: hasSeedling ? 1 : 0.45,
             }}
-            onPointerDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "translateX(-50%) scale(0.9)"; }}
+            onPointerDown={(e) => {
+              if (hasSeedling) (e.currentTarget as HTMLButtonElement).style.transform = "translateX(-50%) scale(0.9)";
+            }}
             onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "translateX(-50%) scale(1)"; }}
             onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "translateX(-50%) scale(1)"; }}
           >
@@ -549,7 +582,7 @@ function Game() {
           <HarvestPopLabel key={pop.id} amount={pop.amount} onDone={() => removePop(pop.id)} />
         ))}
 
-        {/* Arrow navigation */}
+        {/* Arrow navigation — on both sides of the plot */}
         <ArrowBtn direction="left"  onClick={goLeft}  visible={currentPlotIdx > 0} />
         <ArrowBtn direction="right" onClick={goRight} visible={currentPlotIdx < plots.length - 1} />
 
@@ -614,7 +647,6 @@ function WarehouseScreen() {
   );
   useEffect(() => { saveState(persisted); }, [persisted]);
 
-  /* Current plot is the one the player was viewing in Game */
   const currentPlot = persisted.plots[persisted.currentPlotIdx] ?? emptyPlot();
   const currentPlotIdle = currentPlot.gameState === "idle";
 
@@ -624,24 +656,38 @@ function WarehouseScreen() {
       const newInv = { ...p.inventory, [key]: p.inventory[key] - 1 };
 
       if (key === "uchastok") {
-        return { ...p, inventory: newInv, plots: [...p.plots, emptyPlot()] };
+        /* Add new plot, navigate to game so user can see it */
+        const newState = { ...p, inventory: newInv, plots: [...p.plots, emptyPlot()] };
+        saveState(newState);
+        navigate("/");
+        return newState;
       }
 
       if (key === "sazhenec") {
-        const curPlot = p.plots[p.currentPlotIdx];
-        if (!curPlot || curPlot.gameState !== "idle") return p;
-        const newPlots = p.plots.map((plot, i) =>
-          i === p.currentPlotIdx
-            ? { ...plot, gameState: "planting" as GameState, phaseIdx: 0, phaseStartedAt: Date.now() }
-            : plot
+        /* Find first idle plot (prefer current), plant there, then go to game */
+        const idlePlotIdx = p.plots.findIndex((pl) => pl.gameState === "idle");
+        if (idlePlotIdx === -1) return p; /* no idle plot — button should be disabled */
+        const newPlots = p.plots.map((pl, i) =>
+          i === idlePlotIdx
+            ? { ...pl, gameState: "planting" as GameState, phaseIdx: 0, phaseStartedAt: Date.now() }
+            : pl
         );
-        return { ...p, inventory: newInv, plots: newPlots };
+        const newState = {
+          ...p,
+          inventory: newInv,
+          plots: newPlots,
+          currentPlotIdx: idlePlotIdx,
+        };
+        saveState(newState);
+        navigate("/");
+        return newState;
       }
 
       return { ...p, inventory: newInv };
     });
   }
 
+  const hasAnyIdlePlot = persisted.plots.some((pl) => pl.gameState === "idle");
   const ownedItems = SHOP_ITEMS.filter((item) => persisted.inventory[item.key] > 0);
 
   return (
@@ -663,8 +709,9 @@ function WarehouseScreen() {
           )}
           {ownedItems.map((item) => {
             const count = persisted.inventory[item.key];
-            const plotBusy = item.key === "sazhenec" && !currentPlotIdle;
-            const useImg = plotBusy ? "/KnopkaISPOLZOVAT2.webp" : "/KnopkaISPOLZOVAT.webp";
+            /* Саженец disabled if no idle plots; Участок always available */
+            const isDisabled = item.key === "sazhenec" && !hasAnyIdlePlot;
+            const useImg = isDisabled ? "/KnopkaISPOLZOVAT2.webp" : "/KnopkaISPOLZOVAT.webp";
             return (
               <div key={item.key} style={{ position: "relative", width: "100%" }}>
                 <img src={item.img} alt={item.label} draggable={false}
@@ -681,8 +728,11 @@ function WarehouseScreen() {
                 {/* Use button */}
                 <PressBtn
                   onClick={() => handleUse(item.key)}
-                  disabled={plotBusy}
-                  style={{ position: "absolute", right: "2%", top: "50%", transform: "translateY(-50%)", width: "22%" }}
+                  disabled={isDisabled}
+                  style={{
+                    position: "absolute", right: "2%", top: "50%",
+                    transform: "translateY(-50%)", width: "22%",
+                  }}
                 >
                   <img src={useImg} alt="Использовать" draggable={false}
                     style={{ width: "100%", display: "block", userSelect: "none" }} />
@@ -696,7 +746,7 @@ function WarehouseScreen() {
   );
 }
 
-/* ─── Generic nav screen ────────────────────────────────────────── */
+/* ─── Generic nav screen (Friends / Achievements) ───────────────── */
 function NavScreen({ bg, headerSrc, headerAlt }: { bg: string; headerSrc: string; headerAlt: string }) {
   const [, navigate] = useLocation();
   return (

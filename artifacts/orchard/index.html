@@ -1,37 +1,52 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
     <title>ORCHARD</title>
-    <meta name="description" content="ORCHARD — built on Replit. Update this description to reflect the app." />
-    <meta name="robots" content="index, follow" />
-    <meta property="og:title" content="ORCHARD" />
-    <meta property="og:description" content="ORCHARD — built on Replit. Update this description to reflect the app." />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="ORCHARD" />
-    <meta name="twitter:description" content="ORCHARD — built on Replit. Update this description to reflect the app." />
+    <meta name="description" content="ORCHARD — farming game" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-    <!-- ── Background first, highest priority ── -->
-    <link rel="preload" href="/FonOSNOVNOI.webp" as="image" fetchpriority="high" />
     <style>
-      html, body, #root { margin: 0; padding: 0; height: 100%; background: #0a1a2e; }
-      body {
-        background-image: url('/FonOSNOVNOI.webp');
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body, #root {
+        margin: 0; padding: 0;
+        width: 100%; height: 100%;
+        overflow: hidden;
+        background: #000;
       }
     </style>
 
-    <!-- ── Game assets (all WebP) ── -->
-    <link rel="preload" href="/DerevoFaza0.webp"       as="image" />
+    <!-- ── Critical: main bg + UI chrome (fetchpriority=high) ── -->
+    <link rel="preload" href="/FonOSNOVNOI.webp"      as="image" fetchpriority="high" />
+    <link rel="preload" href="/KnopkaX.webp"           as="image" fetchpriority="high" />
+    <link rel="preload" href="/BalanzCDR.webp"         as="image" fetchpriority="high" />
+    <link rel="preload" href="/BalanzPLD.webp"         as="image" fetchpriority="high" />
+    <link rel="preload" href="/OrchardZENTR.webp"      as="image" fetchpriority="high" />
+    <link rel="preload" href="/PanelDRUZYA.webp"       as="image" fetchpriority="high" />
+    <link rel="preload" href="/PanelZADANIYA.webp"     as="image" fetchpriority="high" />
+    <link rel="preload" href="/PanelSKLAD.webp"        as="image" fetchpriority="high" />
+    <link rel="preload" href="/PanelMAGAZIN.webp"      as="image" fetchpriority="high" />
+    <link rel="preload" href="/DerevoFaza0.webp"       as="image" fetchpriority="high" />
+    <link rel="preload" href="/KnopkaPOSADIT.webp"     as="image" fetchpriority="high" />
+    <link rel="preload" href="/StrelkaLeft.webp"       as="image" fetchpriority="high" />
+    <link rel="preload" href="/StrelkaRight.webp"      as="image" fetchpriority="high" />
+
+    <!-- ── Secondary: nav screen backgrounds + headers ── -->
+    <link rel="preload" href="/FonMAGAZIN.webp"        as="image" />
+    <link rel="preload" href="/FonSKLAD.webp"          as="image" />
+    <link rel="preload" href="/FonDOSTIZHENIYA.webp"   as="image" />
+    <link rel="preload" href="/FonDRUZYA.webp"         as="image" />
+    <link rel="preload" href="/HeaderMAGAZIN.webp"     as="image" />
+    <link rel="preload" href="/HeaderSKLAD.webp"       as="image" />
+    <link rel="preload" href="/HeaderDOSTIZHENIYA.webp" as="image" />
+    <link rel="preload" href="/HeaderDRUZYA.webp"      as="image" />
+    <link rel="preload" href="/KnopkaKUPIT.webp"       as="image" />
+    <link rel="preload" href="/KnopkaISPOLZOVAT.webp"  as="image" />
+    <link rel="preload" href="/KnopkaISPOLZOVAT2.webp" as="image" />
+    <link rel="preload" href="/SborPlodov.webp"        as="image" />
+
+    <!-- ── Growth phases ── -->
     <link rel="preload" href="/DerevoFaza1.webp"       as="image" />
     <link rel="preload" href="/DerevoFaza2.webp"       as="image" />
     <link rel="preload" href="/DerevoFaza3.webp"       as="image" />
@@ -40,24 +55,13 @@
     <link rel="preload" href="/DerevoFaza6.webp"       as="image" />
     <link rel="preload" href="/DerevoFaza7.webp"       as="image" />
     <link rel="preload" href="/DerevoFaza8.webp"       as="image" />
-    <link rel="preload" href="/KnopkaPOSADIT.webp"     as="image" />
-    <link rel="preload" href="/SborPlodov.webp"        as="image" />
-    <link rel="preload" href="/KnopkaPoliv.webp"       as="image" />
-    <link rel="preload" href="/KnopkaPoliv2.webp"      as="image" />
-    <link rel="preload" href="/KnopkaUdobrenie.webp"   as="image" />
-    <link rel="preload" href="/KnopkaUdobrenie2.webp"  as="image" />
-    <link rel="preload" href="/BalanzCDR.webp"          as="image" />
-    <link rel="preload" href="/BalanzPLD.webp"          as="image" />
-    <link rel="preload" href="/OrchardZENTR.webp"      as="image" />
-    <link rel="preload" href="/PanelDRUZYA.webp"       as="image" />
-    <link rel="preload" href="/PanelZADANIYA.webp"     as="image" />
-    <link rel="preload" href="/PanelSKLAD.webp"        as="image" />
-    <link rel="preload" href="/PanelMAGAZIN.webp"      as="image" />
-    <link rel="preload" href="/FonMAGAZIN.webp"        as="image" />
-    <link rel="preload" href="/FonSKLAD.webp"          as="image" />
-    <link rel="preload" href="/FonDOSTIZHENIYA.webp"   as="image" />
-    <link rel="preload" href="/FonDRUZYA.webp"         as="image" />
-    <link rel="preload" href="/KnopkaKREST.webp"       as="image" />
+
+    <!-- ── Shop / warehouse item images ── -->
+    <link rel="preload" href="/ItemSazhenec.webp"      as="image" />
+    <link rel="preload" href="/ItemUchastok.webp"      as="image" />
+    <link rel="preload" href="/ItemAvtopoliv.webp"     as="image" />
+    <link rel="preload" href="/ItemAvtosbor.webp"      as="image" />
+    <link rel="preload" href="/ItemUdobrenie.webp"     as="image" />
   </head>
   <body>
     <div id="root"></div>
