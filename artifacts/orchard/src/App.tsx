@@ -7,7 +7,7 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 });
 
-/* ─── Growth phases ───────────────────────────────────────────────
+/* ─── Growth phases ────────────────────────────────────────────────
    0–4  : phases 1–5, 2 min each
    5    : phase 6, 4 min — GREEN fruits
    6    : phase 7, 4 min — harvest button active
@@ -39,6 +39,17 @@ const NAV = [
   { id: "magazin",  path: "/magazin",  img: "/PanelMAGAZIN.webp",  label: "Магазин" },
 ];
 
+/* ─── Shop items ──────────────────────────────────────────────── */
+type ItemKey = "sazhenec" | "uchastok" | "avtopoliv" | "avtosbor" | "udobrenie";
+
+const SHOP_ITEMS: { key: ItemKey; img: string; label: string }[] = [
+  { key: "sazhenec",  img: "/ItemSazhenec.png",  label: "Саженец"   },
+  { key: "uchastok",  img: "/ItemUchastok.png",  label: "Участок"   },
+  { key: "avtopoliv", img: "/ItemAvtopoliv.png",  label: "Автополив" },
+  { key: "avtosbor",  img: "/ItemAvtosbor.png",  label: "Автосбор"  },
+  { key: "udobrenie", img: "/ItemUdobrenie.png",  label: "Удобрение" },
+];
+
 /* ─── Number formatter ─────────────────────────────────────────── */
 function fmt(n: number): string {
   if (n >= 1_000_000_000) { const v = n / 1_000_000_000; return `${v % 1 === 0 ? v : v.toFixed(1)}b`; }
@@ -49,6 +60,14 @@ function fmt(n: number): string {
 
 /* ─── Persistent state ────────────────────────────────────────────── */
 type GameState = "idle" | "planting" | "growing";
+
+interface Inventory {
+  sazhenec:  number;
+  uchastok:  number;
+  avtopoliv: number;
+  avtosbor:  number;
+  udobrenie: number;
+}
 
 interface PersistedState {
   gameState: GameState;
@@ -61,6 +80,7 @@ interface PersistedState {
   waterActivations: number;
   fertActivations: number;
   harvestPresses: number;
+  inventory: Inventory;
 }
 
 function phaseDuration(idx: number, s: PersistedState): number {
@@ -74,7 +94,7 @@ function calcYield(s: PersistedState): number {
   return Math.round(BASE_YIELD * (1 + s.waterActivations * 0.1 + s.fertActivations * 0.2));
 }
 
-const STORAGE_KEY = "orchard_v5";
+const STORAGE_KEY = "orchard_v6";
 
 function loadState(): PersistedState {
   try {
@@ -86,6 +106,7 @@ function loadState(): PersistedState {
     cedro: 0, fruit: 0,
     waterUsed6: false, waterUsed7: false, waterActivations: 0,
     fertActivations: 0, harvestPresses: 0,
+    inventory: { sazhenec: 0, uchastok: 0, avtopoliv: 0, avtosbor: 0, udobrenie: 0 },
   };
 }
 
@@ -111,7 +132,6 @@ function resolveState(s: PersistedState, now: number): PersistedState {
       if (nextIdx < GROWTH_PHASES.length) {
         cur = { ...cur, phaseIdx: nextIdx, phaseStartedAt: nextStart };
       } else {
-        // Phase 8 done → loop back to phase 6, reset per-cycle water flags, then continue
         cur = { ...cur, phaseIdx: PHASE6_IDX, phaseStartedAt: nextStart, waterUsed6: false, waterUsed7: false };
       }
     }
@@ -301,9 +321,24 @@ function CloseBtn({ onClose }: { onClose: () => void }) {
       onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
       onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
     >
-      <img src="/KnopkaKREST.webp" alt="Закрыть" draggable={false}
+      <img src="/KnopkaX.png" alt="Закрыть" draggable={false}
         style={{ width: "100%", display: "block", userSelect: "none" }} />
     </button>
+  );
+}
+
+/* ─── Screen header image (centered, top row) ───────────────────── */
+function ScreenHeader({ src, alt }: { src: string; alt: string }) {
+  return (
+    <div style={{
+      position: "absolute", top: "3%", left: "50%",
+      transform: "translateX(-50%)",
+      width: "50%", zIndex: 34,
+      pointerEvents: "none",
+    }}>
+      <img src={src} alt={alt} draggable={false}
+        style={{ width: "100%", display: "block", userSelect: "none" }} />
+    </div>
   );
 }
 
@@ -314,6 +349,36 @@ function ActionBtn({ inactiveImg, label }: { inactiveImg: string; label: string 
       <img src={inactiveImg} alt={label} draggable={false}
         style={{ width: "100%", display: "block", userSelect: "none" }} />
     </div>
+  );
+}
+
+/* ─── Press button helper ───────────────────────────────────────── */
+function PressBtn({
+  onClick, style, children, disabled,
+}: {
+  onClick?: () => void;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      style={{
+        padding: 0, border: "none", background: "transparent",
+        cursor: disabled ? "default" : "pointer",
+        transition: "transform 0.12s",
+        ...style,
+      }}
+      onPointerDown={(e) => {
+        if (!disabled) (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.92)";
+      }}
+      onPointerUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+      onPointerLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -358,7 +423,6 @@ function Game() {
     setPersisted((p) => {
       const gained = calcYield(p);
       const id = ++popIdRef.current;
-      // schedule pop in next tick so gained is captured
       setTimeout(() => {
         setPops((prev) => [...prev, { id, amount: gained }]);
       }, 0);
@@ -378,19 +442,16 @@ function Game() {
 
   return (
     <>
-      {/* keyframe animation injected once */}
       <style>{`
         @keyframes harvestPop {
           0%   { opacity: 1; transform: translateX(-50%) translateY(0)   scale(1);    }
           20%  { opacity: 1; transform: translateX(-50%) translateY(-8%)  scale(1.15); }
           100% { opacity: 0; transform: translateX(-50%) translateY(-30%) scale(0.9);  }
         }
-
       `}</style>
       <GameShell>
         <TopBar cedro={cedro} fruit={fruit} />
 
-        {/* ── Tree / plot image ── */}
         <div style={{
           position: "absolute", inset: 0, zIndex: 15,
           willChange: "transform", pointerEvents: "none",
@@ -410,7 +471,6 @@ function Game() {
           />
         </div>
 
-        {/* ── Shovel button (idle only) ── */}
         {gameState === "idle" && (
           <button
             aria-label="Посадить саженец"
@@ -432,12 +492,10 @@ function Game() {
           </button>
         )}
 
-        {/* ── 30-second planting countdown ── */}
         {gameState === "planting" && (
           <PlantingTimer phaseStartedAt={persisted.phaseStartedAt} />
         )}
 
-        {/* ── Left action buttons (decorative, no functionality) ── */}
         {showActionBtns && (
           <div style={{
             position: "absolute", left: "3%", top: "10%",
@@ -445,12 +503,11 @@ function Game() {
             display: "flex", flexDirection: "column", justifyContent: "space-between",
             zIndex: 25,
           }}>
-            <ActionBtn inactiveImg="/KnopkaPoliv2.webp"     label="Полив"      />
-            <ActionBtn inactiveImg="/KnopkaUdobrenie2.webp" label="Удобрение"  />
+            <ActionBtn inactiveImg="/KnopkaPoliv2.webp"     label="Полив"     />
+            <ActionBtn inactiveImg="/KnopkaUdobrenie2.webp" label="Удобрение" />
           </div>
         )}
 
-        {/* ── Harvest button (phase 7 only) ── */}
         {showHarvestBtn && (
           <button
             aria-label="Собрать плоды"
@@ -472,7 +529,6 @@ function Game() {
           </button>
         )}
 
-        {/* ── Harvest pop labels ── */}
         {pops.map((pop) => (
           <HarvestPopLabel key={pop.id} amount={pop.amount} onDone={() => removePop(pop.id)} />
         ))}
@@ -483,12 +539,178 @@ function Game() {
   );
 }
 
-/* ─── Nav screens ───────────────────────────────────────────────── */
-function NavScreen({ bg }: { bg: string }) {
+/* ─── Shop screen ───────────────────────────────────────────────── */
+function ShopScreen() {
+  const [, navigate] = useLocation();
+  const [persisted, setPersisted] = useState<PersistedState>(() =>
+    resolveState(loadState(), Date.now())
+  );
+
+  useEffect(() => { saveState(persisted); }, [persisted]);
+
+  function handleBuy(key: ItemKey) {
+    setPersisted((p) => ({
+      ...p,
+      inventory: { ...p.inventory, [key]: p.inventory[key] + 1 },
+    }));
+  }
+
+  return (
+    <GameShell bg="/FonMAGAZIN.webp">
+      <CloseBtn onClose={() => navigate("/")} />
+      <ScreenHeader src="/HeaderMAGAZIN.png" alt="Магазин" />
+
+      {/* Scrollable product grid */}
+      <div style={{
+        position: "absolute",
+        top: "14%", left: "3%", right: "3%", bottom: "2%",
+        overflowY: "auto", zIndex: 20,
+        scrollbarWidth: "none",
+      }}>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "3%",
+          padding: "2% 2% 4%",
+        }}>
+          {SHOP_ITEMS.map((item) => (
+            <div key={item.key} style={{
+              display: "flex", flexDirection: "column", alignItems: "center", gap: "6%",
+            }}>
+              {/* Product block image */}
+              <img src={item.img} alt={item.label} draggable={false}
+                style={{ width: "100%", display: "block", userSelect: "none" }} />
+
+              {/* Buy button */}
+              <PressBtn
+                onClick={() => handleBuy(item.key)}
+                style={{ width: "80%" }}
+              >
+                <img src="/KnopkaKUPIT.png" alt="Купить" draggable={false}
+                  style={{ width: "100%", display: "block", userSelect: "none" }} />
+              </PressBtn>
+            </div>
+          ))}
+        </div>
+      </div>
+    </GameShell>
+  );
+}
+
+/* ─── Warehouse screen ──────────────────────────────────────────── */
+function WarehouseScreen() {
+  const [, navigate] = useLocation();
+  const [persisted, setPersisted] = useState<PersistedState>(() =>
+    resolveState(loadState(), Date.now())
+  );
+
+  useEffect(() => { saveState(persisted); }, [persisted]);
+
+  const plotFree = persisted.gameState === "idle";
+
+  function handleUse(key: ItemKey) {
+    setPersisted((p) => {
+      if (p.inventory[key] <= 0) return p;
+      const newInv = { ...p.inventory, [key]: p.inventory[key] - 1 };
+      let extra: Partial<PersistedState> = {};
+
+      switch (key) {
+        case "sazhenec":
+          if (p.gameState !== "idle") return p;
+          extra = { gameState: "planting", phaseIdx: 0, phaseStartedAt: Date.now() };
+          break;
+        case "avtopoliv":
+          extra = { waterActivations: p.waterActivations + 1 };
+          break;
+        case "avtosbor":
+          extra = { harvestPresses: p.harvestPresses + 1 };
+          break;
+        case "udobrenie":
+          extra = { fertActivations: p.fertActivations + 1 };
+          break;
+        default:
+          break;
+      }
+
+      return { ...p, inventory: newInv, ...extra };
+    });
+  }
+
+  return (
+    <GameShell bg="/FonSKLAD.webp">
+      <CloseBtn onClose={() => navigate("/")} />
+      <ScreenHeader src="/HeaderSKLAD.png" alt="Склад" />
+
+      <div style={{
+        position: "absolute",
+        top: "14%", left: "3%", right: "3%", bottom: "2%",
+        overflowY: "auto", zIndex: 20,
+        scrollbarWidth: "none",
+      }}>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "3%",
+          padding: "2% 2% 4%",
+        }}>
+          {SHOP_ITEMS.map((item) => {
+            const count = persisted.inventory[item.key];
+            const isSazhenec = item.key === "sazhenec";
+            const disabled = isSazhenec && !plotFree;
+            const useImg = disabled ? "/KnopkaISPOLZOVAT2.png" : "/KnopkaISPOLZOVAT.png";
+
+            return (
+              <div key={item.key} style={{
+                display: "flex", flexDirection: "column", alignItems: "center", gap: "6%",
+                position: "relative",
+              }}>
+                {/* Product block image */}
+                <div style={{ position: "relative", width: "100%" }}>
+                  <img src={item.img} alt={item.label} draggable={false}
+                    style={{ width: "100%", display: "block", userSelect: "none" }} />
+                  {/* Count badge */}
+                  <div style={{
+                    position: "absolute", top: "6%", right: "6%",
+                    background: "rgba(0,0,0,0.65)",
+                    color: "#fff",
+                    fontSize: "4.5cqw", fontWeight: "800",
+                    borderRadius: "50%",
+                    minWidth: "7cqw", minHeight: "7cqw",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    padding: "0.5cqw 1.2cqw",
+                    border: "0.4cqw solid rgba(255,255,255,0.3)",
+                    lineHeight: 1,
+                    pointerEvents: "none",
+                  }}>
+                    {count}
+                  </div>
+                </div>
+
+                {/* Use button */}
+                <PressBtn
+                  onClick={() => handleUse(item.key)}
+                  disabled={count === 0 || disabled}
+                  style={{ width: "80%", opacity: count === 0 ? 0.5 : 1 }}
+                >
+                  <img src={useImg} alt="Использовать" draggable={false}
+                    style={{ width: "100%", display: "block", userSelect: "none" }} />
+                </PressBtn>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </GameShell>
+  );
+}
+
+/* ─── Generic nav screen (Friends, Achievements) ────────────────── */
+function NavScreen({ bg, headerSrc, headerAlt }: { bg: string; headerSrc: string; headerAlt: string }) {
   const [, navigate] = useLocation();
   return (
     <GameShell bg={bg}>
       <CloseBtn onClose={() => navigate("/")} />
+      <ScreenHeader src={headerSrc} alt={headerAlt} />
     </GameShell>
   );
 }
@@ -498,10 +720,14 @@ function Router() {
   return (
     <Switch>
       <Route path="/"         component={Game} />
-      <Route path="/druzya"   component={() => <NavScreen bg="/FonDRUZYA.webp"       />} />
-      <Route path="/zadaniya" component={() => <NavScreen bg="/FonDOSTIZHENIYA.webp" />} />
-      <Route path="/sklad"    component={() => <NavScreen bg="/FonSKLAD.webp"        />} />
-      <Route path="/magazin"  component={() => <NavScreen bg="/FonMAGAZIN.webp"      />} />
+      <Route path="/druzya"   component={() => (
+        <NavScreen bg="/FonDRUZYA.webp" headerSrc="/HeaderDRUZYA.png" headerAlt="Друзья" />
+      )} />
+      <Route path="/zadaniya" component={() => (
+        <NavScreen bg="/FonDOSTIZHENIYA.webp" headerSrc="/HeaderDOSTIZHENIYA.png" headerAlt="Достижения" />
+      )} />
+      <Route path="/sklad"    component={WarehouseScreen} />
+      <Route path="/magazin"  component={ShopScreen} />
     </Switch>
   );
 }
