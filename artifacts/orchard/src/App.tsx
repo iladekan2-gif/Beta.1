@@ -373,63 +373,19 @@ function PressBtn({ onClick, style, children, disabled }: {
   );
 }
 
-/* Horizontal item carousel — left/right arrows, one item at a time */
-function ItemCarousel({ children, total, index, onPrev, onNext }: {
-  children: React.ReactNode; total: number; index: number;
-  onPrev: () => void; onNext: () => void;
-}) {
-  const arrowStyle = (side: "left" | "right", active: boolean): React.CSSProperties => ({
-    position: "absolute", bottom: "50%", transform: "translateY(50%)",
-    [side]: "-6%",
-    width: "12%", aspectRatio: "1", zIndex: 10,
-    cursor: active ? "pointer" : "default",
-    opacity: active ? 1 : 0.3,
-    transition: "transform 0.12s, opacity 0.15s",
-    userSelect: "none",
-  });
-  const arrowRef1 = useRef<HTMLDivElement>(null);
-  const arrowRef2 = useRef<HTMLDivElement>(null);
+/* Vertical scroll list — no arrows, smooth scroll, static if fits */
+function VerticalScrollList({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ position: "relative", width: "86%", margin: "0 auto" }}>
-      {/* Left arrow */}
-      <div ref={arrowRef1} onClick={index > 0 ? onPrev : undefined}
-        style={arrowStyle("left", index > 0)}
-        onPointerDown={() => { if (arrowRef1.current && index > 0) arrowRef1.current.style.transform = "translateY(50%) scale(0.88)"; }}
-        onPointerUp={()   => { if (arrowRef1.current) arrowRef1.current.style.transform = "translateY(50%) scale(1)"; }}
-        onPointerLeave={() => { if (arrowRef1.current) arrowRef1.current.style.transform = "translateY(50%) scale(1)"; }}
-      >
-        <img src="/StrelkaLeft.webp" alt="" draggable={false}
-          style={{ width: "100%", display: "block", userSelect: "none" }} />
+    <>
+      <style>{`.vscroll::-webkit-scrollbar{display:none}`}</style>
+      <div className="vscroll" style={{
+        width: "100%", flex: 1, overflowY: "auto", overflowX: "hidden",
+        display: "flex", flexDirection: "column", gap: "3cqw",
+        scrollbarWidth: "none",
+      }}>
+        {children}
       </div>
-
-      {/* Item */}
-      <div style={{ overflow: "hidden" }}>{children}</div>
-
-      {/* Right arrow */}
-      <div ref={arrowRef2} onClick={index < total - 1 ? onNext : undefined}
-        style={arrowStyle("right", index < total - 1)}
-        onPointerDown={() => { if (arrowRef2.current && index < total - 1) arrowRef2.current.style.transform = "translateY(50%) scale(0.88)"; }}
-        onPointerUp={()   => { if (arrowRef2.current) arrowRef2.current.style.transform = "translateY(50%) scale(1)"; }}
-        onPointerLeave={() => { if (arrowRef2.current) arrowRef2.current.style.transform = "translateY(50%) scale(1)"; }}
-      >
-        <img src="/StrelkaRight.webp" alt="" draggable={false}
-          style={{ width: "100%", display: "block", userSelect: "none" }} />
-      </div>
-
-      {/* Dots */}
-      {total > 1 && (
-        <div style={{ display: "flex", justifyContent: "center", gap: "1.5cqw", marginTop: "2%" }}>
-          {Array.from({ length: total }).map((_, i) => (
-            <div key={i} style={{
-              width: "2cqw", height: "2cqw", borderRadius: "50%",
-              background: i === index ? "#f4c842" : "rgba(255,255,255,0.45)",
-              boxShadow: i === index ? "0 0 5px rgba(244,200,66,0.8)" : "none",
-              transition: "background 0.2s",
-            }} />
-          ))}
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -903,21 +859,18 @@ function FriendCard({ friend, onClaim }: { friend: ComputedFriend; onClaim: () =
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   SHOP SCREEN — carousel
+   SHOP SCREEN — vertical scroll list
 ══════════════════════════════════════════════════════════════════ */
 function ShopScreen() {
   const [, navigate] = useLocation();
   const [persisted, setPersisted] = useState<PersistedState>(() =>
     resolveState(loadState(), Date.now())
   );
-  const [idx, setIdx] = useState(0);
   useEffect(() => { saveState(persisted); }, [persisted]);
 
-  const item = SHOP_ITEMS[idx];
-
-  function handleBuy() {
+  function handleBuy(key: ItemKey) {
     setPersisted((p) => ({
-      ...p, inventory: { ...p.inventory, [item.key]: p.inventory[item.key] + 1 },
+      ...p, inventory: { ...p.inventory, [key]: p.inventory[key] + 1 },
     }));
   }
 
@@ -927,56 +880,49 @@ function ShopScreen() {
       <ScreenHeader src="/HeaderMAGAZIN.webp" alt="Магазин" />
 
       <div style={{
-        position: "absolute", top: "14%", left: "2%", right: "2%", bottom: "2%",
+        position: "absolute", top: "14%", left: "4%", right: "4%", bottom: "2%",
         zIndex: 20, display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center",
       }}>
-        <ItemCarousel total={SHOP_ITEMS.length} index={idx}
-          onPrev={() => setIdx((i) => Math.max(0, i - 1))}
-          onNext={() => setIdx((i) => Math.min(SHOP_ITEMS.length - 1, i + 1))}
-        >
-          <div style={{ position: "relative", width: "100%" }}>
-            <img src={item.img} alt={item.label} draggable={false}
-              style={{ width: "100%", display: "block", userSelect: "none" }} />
-            <PressBtn onClick={handleBuy}
-              style={{ position: "absolute", right: "2%", top: "50%", transform: "translateY(-50%)", width: "22%" }}>
-              <img src="/KnopkaKUPIT.webp" alt="Купить" draggable={false}
+        <VerticalScrollList>
+          {SHOP_ITEMS.map((item) => (
+            <div key={item.key} style={{ position: "relative", width: "100%", flexShrink: 0 }}>
+              <img src={item.img} alt={item.label} draggable={false}
                 style={{ width: "100%", display: "block", userSelect: "none" }} />
-            </PressBtn>
-          </div>
-        </ItemCarousel>
+              <PressBtn onClick={() => handleBuy(item.key)}
+                style={{ position: "absolute", right: "2%", top: "50%", transform: "translateY(-50%)", width: "22%" }}>
+                <img src="/KnopkaKUPIT.webp" alt="Купить" draggable={false}
+                  style={{ width: "100%", display: "block", userSelect: "none" }} />
+              </PressBtn>
+            </div>
+          ))}
+        </VerticalScrollList>
       </div>
     </GameShell>
   );
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   WAREHOUSE SCREEN — carousel
+   WAREHOUSE SCREEN — vertical scroll list
 ══════════════════════════════════════════════════════════════════ */
 function WarehouseScreen() {
   const [, navigate] = useLocation();
   const [persisted, setPersisted] = useState<PersistedState>(() =>
     resolveState(loadState(), Date.now())
   );
-  const [idx, setIdx] = useState(0);
   useEffect(() => { saveState(persisted); }, [persisted]);
 
   const ownedItems = SHOP_ITEMS.filter((it) => persisted.inventory[it.key] > 0);
   const hasAnyIdle = persisted.plots.some((p) => p.gameState === "idle");
 
-  const safeIdx = Math.min(idx, Math.max(0, ownedItems.length - 1));
-  const item = ownedItems[safeIdx];
-
-  function handleUse() {
-    if (!item) return;
+  function handleUse(itemKey: ItemKey) {
     setPersisted((p) => {
-      if (p.inventory[item.key] <= 0) return p;
-      const newInv = { ...p.inventory, [item.key]: p.inventory[item.key] - 1 };
-      if (item.key === "uchastok") {
+      if (p.inventory[itemKey] <= 0) return p;
+      const newInv = { ...p.inventory, [itemKey]: p.inventory[itemKey] - 1 };
+      if (itemKey === "uchastok") {
         const s = { ...p, inventory: newInv, plots: [...p.plots, emptyPlot()] };
         saveState(s); navigate("/"); return s;
       }
-      if (item.key === "sazhenec") {
+      if (itemKey === "sazhenec") {
         const idle = p.plots.findIndex((pl) => pl.gameState === "idle");
         if (idle === -1) return p;
         const newPlots = p.plots.map((pl, i) =>
@@ -994,72 +940,159 @@ function WarehouseScreen() {
       <ScreenHeader src="/HeaderSKLAD.webp" alt="Склад" />
 
       <div style={{
-        position: "absolute", top: "14%", left: "2%", right: "2%", bottom: "2%",
+        position: "absolute", top: "14%", left: "4%", right: "4%", bottom: "2%",
         zIndex: 20, display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center",
       }}>
         {ownedItems.length === 0 ? (
           <div style={{
+            flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
             color: "rgba(255,255,255,0.7)", fontSize: "4.5cqw", fontWeight: "600",
             textAlign: "center", textShadow: "0 1px 6px rgba(0,0,0,0.8)",
           }}>Склад пуст</div>
         ) : (
-          <ItemCarousel total={ownedItems.length} index={safeIdx}
-            onPrev={() => setIdx((i) => Math.max(0, i - 1))}
-            onNext={() => setIdx((i) => Math.min(ownedItems.length - 1, i + 1))}
-          >
-            <div style={{ position: "relative", width: "100%" }}>
-              <img src={item.img} alt={item.label} draggable={false}
-                style={{ width: "100%", display: "block", userSelect: "none" }} />
+          <VerticalScrollList>
+            {ownedItems.map((item) => {
+              const disabled = item.key === "sazhenec" && !hasAnyIdle;
+              return (
+                <div key={item.key} style={{ position: "relative", width: "100%", flexShrink: 0 }}>
+                  <img src={item.img} alt={item.label} draggable={false}
+                    style={{ width: "100%", display: "block", userSelect: "none" }} />
 
-              {/* Count badge */}
-              <div style={{
-                position: "absolute", left: "3%", top: "50%", transform: "translateY(-50%)",
-                background: "rgba(0,0,0,0.65)", color: "#fff",
-                fontSize: "4.5cqw", fontWeight: "800",
-                borderRadius: "2cqw", padding: "0.5cqw 1.5cqw",
-                border: "0.3cqw solid rgba(255,255,255,0.3)", lineHeight: 1,
-                pointerEvents: "none", minWidth: "5cqw", textAlign: "center",
-              }}>{persisted.inventory[item.key]}</div>
+                  <div style={{
+                    position: "absolute", left: "3%", top: "50%", transform: "translateY(-50%)",
+                    background: "rgba(0,0,0,0.65)", color: "#fff",
+                    fontSize: "4.5cqw", fontWeight: "800",
+                    borderRadius: "2cqw", padding: "0.5cqw 1.5cqw",
+                    border: "0.3cqw solid rgba(255,255,255,0.3)", lineHeight: 1,
+                    pointerEvents: "none", minWidth: "5cqw", textAlign: "center",
+                  }}>{persisted.inventory[item.key]}</div>
 
-              {/* Use button */}
-              {(() => {
-                const disabled = item.key === "sazhenec" && !hasAnyIdle;
-                return (
-                  <PressBtn onClick={disabled ? undefined : handleUse} disabled={disabled}
+                  <PressBtn onClick={disabled ? undefined : () => handleUse(item.key)} disabled={disabled}
                     style={{ position: "absolute", right: "2%", top: "50%", transform: "translateY(-50%)", width: "22%" }}>
                     <img src={disabled ? "/KnopkaISPOLZOVAT2.webp" : "/KnopkaISPOLZOVAT.webp"}
                       alt="Использовать" draggable={false}
                       style={{ width: "100%", display: "block", userSelect: "none" }} />
                   </PressBtn>
-                );
-              })()}
-            </div>
-          </ItemCarousel>
+                </div>
+              );
+            })}
+          </VerticalScrollList>
         )}
       </div>
     </GameShell>
   );
 }
 
+/* ── Sub-screen overlay shared by all task tabs ─────────────────── */
+function TaskSubScreen({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  return (
+    <div style={{
+      position: "absolute", inset: 0, zIndex: 50,
+      backgroundImage: "url('/FonDOSTIZHENIYA.webp')",
+      backgroundSize: "cover", backgroundPosition: "center",
+    }}>
+      {/* Close button */}
+      <div onClick={onClose} style={{
+        position: "absolute", top: "3%", left: "4%", width: "11%", aspectRatio: "1",
+        cursor: "pointer", zIndex: 55, userSelect: "none",
+      }}
+        onPointerDown={() => { if (ref.current) ref.current.style.transform = "scale(0.9)"; }}
+        onPointerUp={()   => { if (ref.current) ref.current.style.transform = "scale(1)"; }}
+        onPointerLeave={() => { if (ref.current) ref.current.style.transform = "scale(1)"; }}
+      >
+        <span ref={ref} style={{ display: "block", transition: "transform 0.12s", transformOrigin: "center" }}>
+          <img src="/KnopkaX.webp" alt="Закрыть" draggable={false}
+            style={{ width: "100%", display: "block", userSelect: "none" }} />
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/* ── Task card for vertical list ─────────────────────────────────── */
+function TaskCard({ task, persisted, onClaim }: {
+  task: Task; persisted: PersistedState; onClaim: (taskId: string) => void;
+}) {
+  const isDone    = task.check(persisted);
+  const isClaimed = persisted.claimedTaskIds.includes(task.id);
+  const canClaim  = isDone && !isClaimed;
+  const statusColor = isClaimed ? "#88c888" : isDone ? "#f4c842" : "rgba(255,255,255,0.6)";
+  const statusText  = isClaimed ? "✓ Получено" : isDone ? "Выполнено!" : "В процессе...";
+  return (
+    <div style={{
+      background: "rgba(20,10,0,0.72)", borderRadius: "4cqw",
+      border: `0.5cqw solid ${isDone ? "rgba(244,200,66,0.7)" : "rgba(255,255,255,0.15)"}`,
+      padding: "4cqw 5cqw", flexShrink: 0,
+      boxShadow: isDone ? "0 0 20px rgba(244,200,66,0.25)" : "0 4px 20px rgba(0,0,0,0.5)",
+      display: "flex", flexDirection: "column", gap: "2.5cqw",
+    }}>
+      <div style={{
+        fontSize: "5cqw", fontWeight: "800", color: "#f4c842",
+        textShadow: "0 1px 6px rgba(0,0,0,0.8)", textAlign: "center",
+      }}>{task.label}</div>
+      <div style={{
+        fontSize: "3.6cqw", color: "rgba(255,255,255,0.85)", textAlign: "center",
+        lineHeight: 1.4, fontWeight: "500",
+      }}>{task.desc}</div>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center", gap: "2cqw",
+        background: "rgba(244,200,66,0.12)", borderRadius: "3cqw", padding: "2cqw 4cqw",
+      }}>
+        <span style={{ fontSize: "4.5cqw" }}>{task.reward.type === "fruit" ? "🍊" : "🌱"}</span>
+        <span style={{ fontSize: "4cqw", fontWeight: "800", color: "#f4c842" }}>
+          +{task.reward.amount} {task.reward.type === "fruit" ? "плодов" : "саженцев"}
+        </span>
+      </div>
+      <div style={{
+        fontSize: "3.8cqw", fontWeight: "700", color: statusColor,
+        textAlign: "center", textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+      }}>{statusText}</div>
+      {canClaim && (
+        <div onClick={() => onClaim(task.id)} style={{
+          background: "linear-gradient(135deg,#f4c842,#e8a020)",
+          borderRadius: "8cqw", padding: "3cqw 0",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: "pointer", userSelect: "none",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.4)",
+          fontSize: "4.2cqw", fontWeight: "800", color: "#3a1400",
+          transition: "transform 0.12s",
+        }}
+          onPointerDown={(e) => { (e.currentTarget as HTMLDivElement).style.transform = "scale(0.96)"; }}
+          onPointerUp={(e)   => { (e.currentTarget as HTMLDivElement).style.transform = "scale(1)"; }}
+          onPointerLeave={(e)=> { (e.currentTarget as HTMLDivElement).style.transform = "scale(1)"; }}
+        >Забрать награду</div>
+      )}
+    </div>
+  );
+}
+
 /* ══════════════════════════════════════════════════════════════════
-   TASKS SCREEN — carousel
+   TASKS SCREEN — 3 tab buttons
 ══════════════════════════════════════════════════════════════════ */
+const ZADANIYA_TABS = [
+  { id: "tasks",        img: "/ZadaniyaBtn1.webp", label: "Задания"     },
+  { id: "achievements", img: "/ZadaniyaBtn2.webp", label: "Достижения"  },
+  { id: "rating",       img: "/ZadaniyaBtn3.webp", label: "Рейтинг"     },
+] as const;
+
+type ZadaniyaTab = typeof ZADANIYA_TABS[number]["id"];
+
 function TasksScreen() {
   const [, navigate] = useLocation();
   const [persisted, setPersisted] = useState<PersistedState>(() =>
     resolveState(loadState(), Date.now())
   );
-  const [idx, setIdx] = useState(0);
+  const [activeTab, setActiveTab] = useState<ZadaniyaTab | null>(null);
   useEffect(() => { saveState(persisted); }, [persisted]);
 
-  const task = TASKS[idx];
-  const isDone    = task.check(persisted);
-  const isClaimed = persisted.claimedTaskIds.includes(task.id);
-  const canClaim  = isDone && !isClaimed;
-
-  function handleClaim() {
-    if (!canClaim) return;
+  function handleClaim(taskId: string) {
+    const task = TASKS.find((t) => t.id === taskId);
+    if (!task) return;
+    const isDone    = task.check(persisted);
+    const isClaimed = persisted.claimedTaskIds.includes(taskId);
+    if (!isDone || isClaimed) return;
     setPersisted((p) => {
       const inv = { ...p.inventory };
       if (task.reward.type === "sazhenec") inv.sazhenec += task.reward.amount;
@@ -1067,87 +1100,102 @@ function TasksScreen() {
         ...p,
         fruit: task.reward.type === "fruit" ? p.fruit + task.reward.amount : p.fruit,
         inventory: inv,
-        claimedTaskIds: [...p.claimedTaskIds, task.id],
+        claimedTaskIds: [...p.claimedTaskIds, taskId],
       };
     });
   }
-
-  const statusColor = isClaimed ? "#88c888" : isDone ? "#f4c842" : "rgba(255,255,255,0.6)";
-  const statusText  = isClaimed ? "✓ Получено" : isDone ? "Выполнено!" : "В процессе...";
 
   return (
     <GameShell bg="/FonDOSTIZHENIYA.webp">
       <CloseBtn onClose={() => navigate("/")} />
       <ScreenHeader src="/HeaderDOSTIZHENIYA.webp" alt="Задания" />
 
+      {/* 3 tab buttons */}
       <div style={{
-        position: "absolute", top: "14%", left: "2%", right: "2%", bottom: "2%",
-        zIndex: 20, display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center", gap: "4%",
+        position: "absolute", top: "16%", left: "3%", right: "3%",
+        display: "flex", flexDirection: "column", gap: "3%",
+        zIndex: 20,
       }}>
-        <ItemCarousel total={TASKS.length} index={idx}
-          onPrev={() => setIdx((i) => Math.max(0, i - 1))}
-          onNext={() => setIdx((i) => Math.min(TASKS.length - 1, i + 1))}
-        >
-          {/* Task card */}
-          <div style={{
-            background: "rgba(20,10,0,0.72)", borderRadius: "4cqw",
-            border: `0.5cqw solid ${isDone ? "rgba(244,200,66,0.7)" : "rgba(255,255,255,0.15)"}`,
-            padding: "5cqw 6cqw",
-            boxShadow: isDone ? "0 0 20px rgba(244,200,66,0.25)" : "0 4px 20px rgba(0,0,0,0.5)",
-            display: "flex", flexDirection: "column", gap: "3cqw",
-          }}>
-            {/* Title */}
-            <div style={{
-              fontSize: "5.5cqw", fontWeight: "800", color: "#f4c842",
-              textShadow: "0 1px 6px rgba(0,0,0,0.8)", textAlign: "center",
-            }}>{task.label}</div>
-
-            {/* Description */}
-            <div style={{
-              fontSize: "3.8cqw", color: "rgba(255,255,255,0.85)", textAlign: "center",
-              lineHeight: 1.4, fontWeight: "500",
-            }}>{task.desc}</div>
-
-            {/* Reward */}
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: "2cqw",
-              background: "rgba(244,200,66,0.12)", borderRadius: "3cqw", padding: "2cqw 4cqw",
-            }}>
-              <span style={{ fontSize: "5cqw" }}>
-                {task.reward.type === "fruit" ? "🍊" : "🌱"}
-              </span>
-              <span style={{ fontSize: "4.5cqw", fontWeight: "800", color: "#f4c842" }}>
-                +{task.reward.amount} {task.reward.type === "fruit" ? "плодов" : "саженцев"}
+        {ZADANIYA_TABS.map((tab) => {
+          const ref = { current: null as HTMLSpanElement | null };
+          return (
+            <div key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{ width: "100%", cursor: "pointer", userSelect: "none" }}
+              onPointerDown={(e) => {
+                const span = e.currentTarget.querySelector("span") as HTMLSpanElement | null;
+                if (span) span.style.transform = "scale(0.95)";
+              }}
+              onPointerUp={(e) => {
+                const span = e.currentTarget.querySelector("span") as HTMLSpanElement | null;
+                if (span) span.style.transform = "scale(1)";
+              }}
+              onPointerLeave={(e) => {
+                const span = e.currentTarget.querySelector("span") as HTMLSpanElement | null;
+                if (span) span.style.transform = "scale(1)";
+              }}
+            >
+              <span style={{ display: "block", transition: "transform 0.12s", transformOrigin: "center" }}>
+                <img src={tab.img} alt={tab.label} draggable={false}
+                  style={{ width: "100%", display: "block", userSelect: "none" }} />
               </span>
             </div>
-
-            {/* Status */}
-            <div style={{
-              fontSize: "4cqw", fontWeight: "700", color: statusColor,
-              textAlign: "center", textShadow: "0 1px 4px rgba(0,0,0,0.8)",
-            }}>{statusText}</div>
-
-            {/* Claim button */}
-            {canClaim && (
-              <div onClick={handleClaim} style={{
-                background: "linear-gradient(135deg,#f4c842,#e8a020)",
-                borderRadius: "8cqw", padding: "3cqw 0",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                cursor: "pointer", userSelect: "none",
-                boxShadow: "0 2px 10px rgba(0,0,0,0.4)",
-                fontSize: "4.5cqw", fontWeight: "800", color: "#3a1400",
-              }}
-                onPointerDown={(e) => { (e.currentTarget as HTMLDivElement).style.transform = "scale(0.96)"; }}
-                onPointerUp={(e)   => { (e.currentTarget as HTMLDivElement).style.transform = "scale(1)"; }}
-                onPointerLeave={(e)=> { (e.currentTarget as HTMLDivElement).style.transform = "scale(1)"; }}
-              >
-                Забрать награду
-              </div>
-            )}
-          </div>
-        </ItemCarousel>
+          );
+        })}
       </div>
+
+      {/* Sub-screen overlays */}
+      {activeTab === "tasks" && (
+        <TaskSubScreen onClose={() => setActiveTab(null)}>
+          <ScreenHeader src="/HeaderDOSTIZHENIYA.webp" alt="Задания" />
+          <div style={{
+            position: "absolute", top: "14%", left: "4%", right: "4%", bottom: "2%",
+            zIndex: 51, display: "flex", flexDirection: "column",
+          }}>
+            <VerticalScrollList>
+              {TASKS.map((task) => (
+                <TaskCard key={task.id} task={task} persisted={persisted} onClaim={handleClaim} />
+              ))}
+            </VerticalScrollList>
+          </div>
+        </TaskSubScreen>
+      )}
+
+      {activeTab === "achievements" && (
+        <TaskSubScreen onClose={() => setActiveTab(null)}>
+          <ScreenHeader src="/HeaderDOSTIZHENIYA.webp" alt="Достижения" />
+          <div style={{
+            position: "absolute", top: "14%", left: "4%", right: "4%", bottom: "2%",
+            zIndex: 51, display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div style={{
+              color: "rgba(255,255,255,0.65)", fontSize: "4.5cqw", fontWeight: "600",
+              textAlign: "center", textShadow: "0 1px 6px rgba(0,0,0,0.8)",
+              lineHeight: 1.6, padding: "0 8%",
+            }}>
+              🏆<br />Достижения<br />скоро появятся!
+            </div>
+          </div>
+        </TaskSubScreen>
+      )}
+
+      {activeTab === "rating" && (
+        <TaskSubScreen onClose={() => setActiveTab(null)}>
+          <ScreenHeader src="/HeaderDOSTIZHENIYA.webp" alt="Рейтинг" />
+          <div style={{
+            position: "absolute", top: "14%", left: "4%", right: "4%", bottom: "2%",
+            zIndex: 51, display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div style={{
+              color: "rgba(255,255,255,0.65)", fontSize: "4.5cqw", fontWeight: "600",
+              textAlign: "center", textShadow: "0 1px 6px rgba(0,0,0,0.8)",
+              lineHeight: 1.6, padding: "0 8%",
+            }}>
+              📊<br />Рейтинг<br />скоро появится!
+            </div>
+          </div>
+        </TaskSubScreen>
+      )}
     </GameShell>
   );
 }
