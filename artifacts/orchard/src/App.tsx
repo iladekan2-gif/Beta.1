@@ -40,7 +40,7 @@ type ItemKey = "sazhenec" | "uchastok" | "avtopoliv" | "avtosbor" | "udobrenie";
 const SHOP_ITEMS: { key: ItemKey; img: string; label: string; desc: string }[] = [
   { key: "sazhenec",  img: "/ItemSazhenec.webp",  label: "Саженец",    desc: "Посади новое дерево на участке" },
   { key: "uchastok",  img: "/ItemUchastok.webp",  label: "Участок",    desc: "Добавь новый участок для деревьев" },
-  { key: "avtopoliv", img: "/ItemAvtopoliv.webp", label: "Автополив",  desc: "Автоматический полив деревьев" },
+  { key: "avtopoliv", img: "/ItemAvtopoliv.webp", label: "Автополив",  desc: "Автополив на 5 циклов" },
   { key: "avtosbor",  img: "/ItemAvtosbor.webp",  label: "Автосбор",   desc: "Автоматический сбор урожая" },
   { key: "udobrenie", img: "/ItemUdobrenie.webp", label: "Удобрение",  desc: "Ускоряет рост дерева" },
 ];
@@ -134,11 +134,18 @@ function genPlayerId(): string {
 /* ─── State types ───────────────────────────────────────────────── */
 type GameState = "idle" | "planting" | "growing";
 
+/* Cycle 1 (Growth): phaseIdx 0-4
+   Cycle 2 (Ripening): phaseIdx 5 (PHASE6_IDX) */
+const AUTO_WATER_CYCLES = 5; // cycles per avtopoliv item
+
 interface PlotState {
   gameState: GameState;
   phaseIdx: number;
   phaseStartedAt: number;
   harvestPresses: number;
+  growthWatered: boolean;       // cycle-1 watered → 2× speed for phases 0-4
+  ripeningWaterCount: number;   // cycle-2 waters → +5% yield each, 2× speed
+  lastAutoRipeningAt: number;   // phaseStartedAt of last auto-applied ripening water
 }
 
 interface Inventory {
@@ -163,18 +170,28 @@ interface PersistedState {
   referralBonusReceived: boolean;
   friendEntries: FriendEntry[];
   claimedTaskIds: string[];
+  autoWateringCyclesLeft: number; // remaining auto-water lifecycle cycles
 }
 
 function emptyPlot(): PlotState {
-  return { gameState: "idle", phaseIdx: 0, phaseStartedAt: 0, harvestPresses: 0 };
+  return {
+    gameState: "idle", phaseIdx: 0, phaseStartedAt: 0, harvestPresses: 0,
+    growthWatered: false, ripeningWaterCount: 0, lastAutoRipeningAt: 0,
+  };
 }
 
 function resolvePlot(plot: PlotState, now: number): PlotState {
   let cur = { ...plot };
   for (;;) {
     if (cur.gameState === "idle") break;
-    const dur = cur.gameState === "planting"
+    const baseDur = cur.gameState === "planting"
       ? PLANTING_DURATION : (GROWTH_PHASES[cur.phaseIdx]?.duration ?? 120);
+    // Speed multiplier: watering halves duration in growth (0-4) or ripening (PHASE6_IDX)
+    let dur = baseDur;
+    if (cur.gameState === "growing") {
+      if (cur.phaseIdx <= 4 && cur.growthWatered) dur = baseDur / 2;
+      else if (cur.phaseIdx === PHASE6_IDX && cur.ripeningWaterCount > 0) dur = baseDur / 2;
+    }
     const elapsed = (now - cur.phaseStartedAt) / 1000;
     if (elapsed < dur) break;
     const overflow = (elapsed - dur) * 1000;
@@ -195,7 +212,7 @@ function resolveState(s: PersistedState, now: number): PersistedState {
   return { ...s, plots: s.plots.map((p) => resolvePlot(p, now)) };
 }
 
-const STORAGE_KEY = "orchard_v10";
+const STORAGE_KEY = "orchard_v11";
 
 function loadState(): PersistedState {
   const urlRef = new URLSearchParams(window.location.search).get("ref") ?? null;
@@ -204,8 +221,18 @@ function loadState(): PersistedState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const s = JSON.parse(raw) as PersistedState;
-      if (urlRef && !s.referredBy) return { ...s, referredBy: urlRef };
-      return s;
+      const migrated: PersistedState = {
+        ...s,
+        autoWateringCyclesLeft: s.autoWateringCyclesLeft ?? 0,
+        plots: s.plots.map((p) => ({
+          ...p,
+          growthWatered: p.growthWatered ?? false,
+          ripeningWaterCount: p.ripeningWaterCount ?? 0,
+          lastAutoRipeningAt: p.lastAutoRipeningAt ?? 0,
+        })),
+      };
+      if (urlRef && !migrated.referredBy) return { ...migrated, referredBy: urlRef };
+      return migrated;
     }
   } catch {}
   return {
@@ -216,6 +243,7 @@ function loadState(): PersistedState {
     referralBonusReceived: false,
     friendEntries: [],
     claimedTaskIds: [],
+    autoWateringCyclesLeft: 0,
   };
 }
 
@@ -503,6 +531,8 @@ function Game() {
     resolveState(loadState(), Date.now())
   );
   const [pops, setPops] = useState<HarvestPop[]>([]);
+  const [waterMsg, setWaterMsg] = useState("");
+  const [waterCooldown, setWaterCooldown] = useState(false);
   const popIdRef = useRef(0);
   useEffect(() => { saveState(persisted); }, [persisted]);
   const ref = useRef(persisted); ref.current = persisted;
@@ -516,9 +546,34 @@ function Game() {
   useEffect(() => {
     if (!anyActive) return;
     const id = setInterval(() => {
-      const next = resolveState(ref.current, Date.now());
-      const changed = next.plots.some((p, i) =>
-        p.gameState !== ref.current.plots[i]?.gameState || p.phaseIdx !== ref.current.plots[i]?.phaseIdx);
+      let next = resolveState(ref.current, Date.now());
+
+      /* Auto-watering: when cycles remain, auto-apply ripening water the first
+         time each new ripening phase (PHASE6_IDX) starts on any plot */
+      if (next.autoWateringCyclesLeft > 0) {
+        next = {
+          ...next,
+          plots: next.plots.map((p) => {
+            if (
+              p.gameState === "growing" &&
+              p.phaseIdx === PHASE6_IDX &&
+              p.phaseStartedAt !== p.lastAutoRipeningAt
+            ) {
+              return { ...p, ripeningWaterCount: p.ripeningWaterCount + 1, lastAutoRipeningAt: p.phaseStartedAt };
+            }
+            return p;
+          }),
+        };
+      }
+
+      const changed = next.plots.some((p, i) => {
+        const prev = ref.current.plots[i];
+        return (
+          p.gameState !== prev?.gameState ||
+          p.phaseIdx !== prev?.phaseIdx ||
+          p.ripeningWaterCount !== prev?.ripeningWaterCount
+        );
+      });
       if (changed) setPersisted(next);
     }, 500);
     return () => clearInterval(id);
@@ -539,11 +594,21 @@ function Game() {
         extraFruit = REFERRAL_BONUS;
         peerRegister(p.referredBy, p.playerId, `#${p.playerId.slice(0, 6)}`);
       }
+      const autoWater = p.autoWateringCyclesLeft > 0;
       return {
         ...p,
+        autoWateringCyclesLeft: autoWater ? p.autoWateringCyclesLeft - 1 : p.autoWateringCyclesLeft,
         plots: p.plots.map((pl, i) =>
           i === p.currentPlotIdx
-            ? { ...pl, gameState: "planting" as GameState, phaseIdx: 0, phaseStartedAt: Date.now() }
+            ? {
+                ...pl,
+                gameState: "planting" as GameState,
+                phaseIdx: 0,
+                phaseStartedAt: Date.now(),
+                growthWatered: autoWater,
+                ripeningWaterCount: 0,
+                lastAutoRipeningAt: 0,
+              }
             : pl
         ),
         fruit: p.fruit + extraFruit,
@@ -554,12 +619,15 @@ function Game() {
   }
 
   function handleHarvest() {
-    const id = ++popIdRef.current;
-    setTimeout(() => { setPops((prev) => [...prev, { id, amount: BASE_YIELD }]); }, 0);
     setPersisted((s) => {
-      if (s.referredBy) peerAddHarvest(s.referredBy, s.playerId, BASE_YIELD);
+      const currentPlot = s.plots[s.currentPlotIdx];
+      const plotYield = Math.round(BASE_YIELD * (1 + 0.05 * (currentPlot?.ripeningWaterCount ?? 0)));
+      const id = ++popIdRef.current;
+      setTimeout(() => { setPops((prev) => [...prev, { id, amount: plotYield }]); }, 0);
+      if (s.referredBy) peerAddHarvest(s.referredBy, s.playerId, plotYield);
       return {
-        ...s, fruit: s.fruit + BASE_YIELD,
+        ...s,
+        fruit: s.fruit + plotYield,
         plots: s.plots.map((p, i) =>
           i === s.currentPlotIdx
             ? { ...p, phaseIdx: WINDDOWN_PHASE_IDX, phaseStartedAt: Date.now(), harvestPresses: p.harvestPresses + 1 }
@@ -567,6 +635,23 @@ function Game() {
         ),
       };
     });
+  }
+
+  /* Watering via ad — applies to all active trees */
+  function handleWater() {
+    if (waterCooldown) return;
+    setWaterCooldown(true);
+    setWaterMsg("💧 Деревья политы!");
+    setTimeout(() => { setWaterMsg(""); setWaterCooldown(false); }, 2500);
+    setPersisted((s) => ({
+      ...s,
+      plots: s.plots.map((p) => {
+        if (p.gameState !== "growing") return p;
+        if (p.phaseIdx <= 4) return { ...p, growthWatered: true };                              // cycle 1
+        if (p.phaseIdx === PHASE6_IDX) return { ...p, ripeningWaterCount: p.ripeningWaterCount + 1 }; // cycle 2
+        return p;
+      }),
+    }));
   }
 
   return (
@@ -628,6 +713,54 @@ function Game() {
           <HarvestPopLabel key={pop.id} amount={pop.amount}
             onDone={() => setPops((prev) => prev.filter((p) => p.id !== pop.id))} />
         ))}
+
+        {/* Water button — visible while any tree is in growth or ripening cycle */}
+        {plots.some((p) => p.gameState === "growing" && p.phaseIdx <= PHASE6_IDX) && (
+          <div style={{
+            position: "absolute", left: "3%", bottom: "22%",
+            zIndex: 26, display: "flex", flexDirection: "column", alignItems: "center", gap: "1cqw",
+          }}>
+            <div
+              onClick={waterCooldown ? undefined : handleWater}
+              style={{
+                width: "13cqw", height: "13cqw", borderRadius: "50%",
+                background: waterCooldown ? "rgba(70,130,200,0.45)" : "rgba(40,110,220,0.88)",
+                border: "0.5cqw solid rgba(255,255,255,0.45)",
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                cursor: waterCooldown ? "default" : "pointer",
+                boxShadow: waterCooldown ? "none" : "0 2px 12px rgba(0,80,200,0.5)",
+                transition: "transform 0.12s, background 0.2s",
+                userSelect: "none",
+              }}
+              onPointerDown={(e) => { if (!waterCooldown) (e.currentTarget as HTMLDivElement).style.transform = "scale(0.9)"; }}
+              onPointerUp={(e)   => { (e.currentTarget as HTMLDivElement).style.transform = "scale(1)"; }}
+              onPointerLeave={(e)=> { (e.currentTarget as HTMLDivElement).style.transform = "scale(1)"; }}
+            >
+              <span style={{ fontSize: "5.5cqw", lineHeight: 1 }}>💧</span>
+              <span style={{ fontSize: "2cqw", color: "#fff", fontWeight: "700", lineHeight: 1.3 }}>Полив</span>
+            </div>
+            {persisted.autoWateringCyclesLeft > 0 && (
+              <div style={{
+                background: "rgba(30,90,200,0.82)", color: "#fff",
+                fontSize: "2.4cqw", fontWeight: "700", borderRadius: "2cqw",
+                padding: "0.4cqw 1.4cqw", whiteSpace: "nowrap",
+                border: "0.3cqw solid rgba(255,255,255,0.3)",
+              }}>АП: {persisted.autoWateringCyclesLeft}</div>
+            )}
+          </div>
+        )}
+
+        {/* Water toast */}
+        {waterMsg && (
+          <div style={{
+            position: "absolute", left: "50%", top: "22%", transform: "translateX(-50%)",
+            background: "rgba(30,100,220,0.92)", color: "#fff",
+            fontSize: "3.5cqw", fontWeight: "700",
+            borderRadius: "3cqw", padding: "1.5cqw 3cqw",
+            whiteSpace: "nowrap", zIndex: 40, pointerEvents: "none",
+            boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
+          }}>💧 Деревья политы!</div>
+        )}
 
         <ArrowBtn direction="left"  onClick={() => setPersisted((s) => ({ ...s, currentPlotIdx: Math.max(0, s.currentPlotIdx - 1) }))} visible={currentPlotIdx > 0} />
         <ArrowBtn direction="right" onClick={() => setPersisted((s) => ({ ...s, currentPlotIdx: Math.min(s.plots.length - 1, s.currentPlotIdx + 1) }))} visible={currentPlotIdx < plots.length - 1} />
@@ -929,6 +1062,10 @@ function WarehouseScreen() {
           i === idle ? { ...pl, gameState: "planting" as GameState, phaseIdx: 0, phaseStartedAt: Date.now() } : pl);
         const s = { ...p, inventory: newInv, plots: newPlots, currentPlotIdx: idle };
         saveState(s); navigate("/"); return s;
+      }
+      if (itemKey === "avtopoliv") {
+        const s = { ...p, inventory: newInv, autoWateringCyclesLeft: (p.autoWateringCyclesLeft ?? 0) + AUTO_WATER_CYCLES };
+        saveState(s); return s;
       }
       return { ...p, inventory: newInv };
     });
