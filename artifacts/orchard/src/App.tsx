@@ -720,25 +720,25 @@ function Game() {
             position: "absolute", left: "3%", bottom: "22%",
             zIndex: 26, display: "flex", flexDirection: "column", alignItems: "center", gap: "1cqw",
           }}>
-            <div
+            <button
               onClick={waterCooldown ? undefined : handleWater}
               style={{
-                width: "13cqw", height: "13cqw", borderRadius: "50%",
-                background: waterCooldown ? "rgba(70,130,200,0.45)" : "rgba(40,110,220,0.88)",
-                border: "0.5cqw solid rgba(255,255,255,0.45)",
-                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                width: "16cqw", padding: 0, border: "none", background: "transparent",
                 cursor: waterCooldown ? "default" : "pointer",
-                boxShadow: waterCooldown ? "none" : "0 2px 12px rgba(0,80,200,0.5)",
-                transition: "transform 0.12s, background 0.2s",
+                opacity: waterCooldown ? 0.5 : 1,
+                transition: "transform 0.12s, opacity 0.2s",
                 userSelect: "none",
               }}
-              onPointerDown={(e) => { if (!waterCooldown) (e.currentTarget as HTMLDivElement).style.transform = "scale(0.9)"; }}
-              onPointerUp={(e)   => { (e.currentTarget as HTMLDivElement).style.transform = "scale(1)"; }}
-              onPointerLeave={(e)=> { (e.currentTarget as HTMLDivElement).style.transform = "scale(1)"; }}
+              onPointerDown={(e) => { if (!waterCooldown) (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.9)"; }}
+              onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+              onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
             >
-              <span style={{ fontSize: "5.5cqw", lineHeight: 1 }}>💧</span>
-              <span style={{ fontSize: "2cqw", color: "#fff", fontWeight: "700", lineHeight: 1.3 }}>Полив</span>
-            </div>
+              <img
+                src={waterCooldown ? "/KnopkaPoliv2.webp" : "/KnopkaPoliv.webp"}
+                alt="Полив" draggable={false}
+                style={{ width: "100%", display: "block", userSelect: "none" }}
+              />
+            </button>
             {persisted.autoWateringCyclesLeft > 0 && (
               <div style={{
                 background: "rgba(30,90,200,0.82)", color: "#fff",
