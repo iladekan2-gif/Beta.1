@@ -143,9 +143,9 @@ interface PlotState {
   phaseIdx: number;
   phaseStartedAt: number;
   harvestPresses: number;
-  growthWatered: boolean;       // cycle-1 watered → 2× speed for phases 0-4
-  ripeningWaterCount: number;   // cycle-2 waters → +5% yield each, 2× speed
-  lastAutoRipeningAt: number;   // phaseStartedAt of last auto-applied ripening water
+  growthWatered: boolean;          // cycle-1 watered → 2× speed for phases 0-4
+  ripeningWaterCount: number;      // cycle-2 waters → +5% yield each, 2× speed
+  lastRipeningWateredAt: number;   // phaseStartedAt of ripening phase that was last watered
 }
 
 interface Inventory {
@@ -176,7 +176,7 @@ interface PersistedState {
 function emptyPlot(): PlotState {
   return {
     gameState: "idle", phaseIdx: 0, phaseStartedAt: 0, harvestPresses: 0,
-    growthWatered: false, ripeningWaterCount: 0, lastAutoRipeningAt: 0,
+    growthWatered: false, ripeningWaterCount: 0, lastRipeningWateredAt: 0,
   };
 }
 
@@ -228,7 +228,7 @@ function loadState(): PersistedState {
           ...p,
           growthWatered: p.growthWatered ?? false,
           ripeningWaterCount: p.ripeningWaterCount ?? 0,
-          lastAutoRipeningAt: p.lastAutoRipeningAt ?? 0,
+          lastRipeningWateredAt: (p as PlotState & { lastAutoRipeningAt?: number }).lastAutoRipeningAt ?? (p as PlotState).lastRipeningWateredAt ?? 0,
         })),
       };
       if (urlRef && !migrated.referredBy) return { ...migrated, referredBy: urlRef };
@@ -557,9 +557,9 @@ function Game() {
             if (
               p.gameState === "growing" &&
               p.phaseIdx === PHASE6_IDX &&
-              p.phaseStartedAt !== p.lastAutoRipeningAt
+              p.phaseStartedAt !== p.lastRipeningWateredAt
             ) {
-              return { ...p, ripeningWaterCount: p.ripeningWaterCount + 1, lastAutoRipeningAt: p.phaseStartedAt };
+              return { ...p, ripeningWaterCount: p.ripeningWaterCount + 1, lastRipeningWateredAt: p.phaseStartedAt };
             }
             return p;
           }),
@@ -607,7 +607,7 @@ function Game() {
                 phaseStartedAt: Date.now(),
                 growthWatered: autoWater,
                 ripeningWaterCount: 0,
-                lastAutoRipeningAt: 0,
+                lastRipeningWateredAt: 0,
               }
             : pl
         ),
@@ -647,8 +647,12 @@ function Game() {
       ...s,
       plots: s.plots.map((p) => {
         if (p.gameState !== "growing") return p;
-        if (p.phaseIdx <= 4) return { ...p, growthWatered: true };                              // cycle 1
-        if (p.phaseIdx === PHASE6_IDX) return { ...p, ripeningWaterCount: p.ripeningWaterCount + 1 }; // cycle 2
+        // Cycle 1: water growth once per lifecycle
+        if (p.phaseIdx <= 4 && !p.growthWatered)
+          return { ...p, growthWatered: true };
+        // Cycle 2: water ripening once per ripening phase (identified by phaseStartedAt)
+        if (p.phaseIdx === PHASE6_IDX && p.phaseStartedAt !== p.lastRipeningWateredAt)
+          return { ...p, ripeningWaterCount: p.ripeningWaterCount + 1, lastRipeningWateredAt: p.phaseStartedAt };
         return p;
       }),
     }));
@@ -715,26 +719,33 @@ function Game() {
         ))}
 
         {/* Water button — visible while any tree is in growth or ripening cycle */}
-        {plots.some((p) => p.gameState === "growing" && p.phaseIdx <= PHASE6_IDX) && (
+        {plots.some((p) => p.gameState === "growing" && p.phaseIdx <= PHASE6_IDX) && (() => {
+          // Active when at least one tree can still receive watering this cycle
+          const canWater = !waterCooldown && plots.some((p) => {
+            if (p.gameState !== "growing") return false;
+            if (p.phaseIdx <= 4 && !p.growthWatered) return true;
+            if (p.phaseIdx === PHASE6_IDX && p.phaseStartedAt !== p.lastRipeningWateredAt) return true;
+            return false;
+          });
+          return (
           <div style={{
             position: "absolute", left: "3%", bottom: "22%",
             zIndex: 26, display: "flex", flexDirection: "column", alignItems: "center", gap: "1cqw",
           }}>
             <button
-              onClick={waterCooldown ? undefined : handleWater}
+              onClick={canWater ? handleWater : undefined}
               style={{
                 width: "16cqw", padding: 0, border: "none", background: "transparent",
-                cursor: waterCooldown ? "default" : "pointer",
-                opacity: waterCooldown ? 0.5 : 1,
-                transition: "transform 0.12s, opacity 0.2s",
+                cursor: canWater ? "pointer" : "default",
+                transition: "transform 0.12s",
                 userSelect: "none",
               }}
-              onPointerDown={(e) => { if (!waterCooldown) (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.9)"; }}
+              onPointerDown={(e) => { if (canWater) (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.9)"; }}
               onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
               onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
             >
               <img
-                src={waterCooldown ? "/KnopkaPoliv2.webp" : "/KnopkaPoliv.webp"}
+                src={canWater ? "/KnopkaPoliv.webp" : "/KnopkaPoliv2.webp"}
                 alt="Полив" draggable={false}
                 style={{ width: "100%", display: "block", userSelect: "none" }}
               />
@@ -748,7 +759,8 @@ function Game() {
               }}>АП: {persisted.autoWateringCyclesLeft}</div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* Water toast */}
         {waterMsg && (
