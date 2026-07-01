@@ -24,13 +24,13 @@ args = "Start application"
 name = "Start application"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=3000 BASE_PATH=/ pnpm --filter orchard run dev"
-waitForPort = 3000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=5173 BASE_PATH=/ pnpm --filter @workspace/orchard run dev"
+waitForPort = 5173
 
 [agent]
 stack = "PNPM_WORKSPACE"
