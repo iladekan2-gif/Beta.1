@@ -8,19 +8,51 @@ const queryClient = new QueryClient({
 });
 
 /* ─── Sound effect helpers ─────────────────────────────────────────
-   These are always audible — not tied to the music on/off toggle.    */
-function playClick() {
-  try {
+   Pre-loaded pools so playback is instant with zero decode lag.
+   Not tied to the music on/off toggle.                               */
+const CLICK_POOL_SIZE = 5;
+let _clickPool: HTMLAudioElement[] | null = null;
+let _clickIdx = 0;
+let _notifAudio: HTMLAudioElement | null = null;
+
+function _buildClickPool() {
+  _clickPool = Array.from({ length: CLICK_POOL_SIZE }, () => {
     const a = new Audio("/click.mp3");
     a.volume = 0.22;
+    a.preload = "auto";
+    return a;
+  });
+}
+function _buildNotif() {
+  _notifAudio = new Audio("/notification.mp3");
+  _notifAudio.volume = 0.32;
+  _notifAudio.preload = "auto";
+}
+
+/* Bootstrap pools on first interaction so decode happens once */
+let _poolsReady = false;
+function _ensurePools() {
+  if (_poolsReady) return;
+  _poolsReady = true;
+  _buildClickPool();
+  _buildNotif();
+}
+document.addEventListener("pointerdown", _ensurePools, { once: true });
+
+function playClick() {
+  try {
+    if (!_clickPool) return;
+    const a = _clickPool[_clickIdx % CLICK_POOL_SIZE];
+    _clickIdx++;
+    a.currentTime = 0;
     a.play().catch(() => {});
   } catch { /* ignore */ }
 }
 function playNotification() {
   try {
-    const a = new Audio("/notification.mp3");
-    a.volume = 0.32;
-    a.play().catch(() => {});
+    if (!_notifAudio) return;
+    _notifAudio.currentTime = 0;
+    _notifAudio.play().catch(() => {});
   } catch { /* ignore */ }
 }
 
@@ -1403,9 +1435,9 @@ function TasksScreen() {
         zIndex: 20,
       }}>
         {ZADANIYA_TABS.map((tab) => {
-          /* Badge on "tasks" and "achievements" tabs if any task claimable */
+          /* Badge on "tasks" tab only when there are claimable tasks */
           const hasClaimable = TASKS.some((t) => t.check(persisted) && !persisted.claimedTaskIds.includes(t.id));
-          const showBadge = (tab.id === "tasks" || tab.id === "achievements") && hasClaimable;
+          const showBadge = tab.id === "tasks" && hasClaimable;
           return (
             <div key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -1461,13 +1493,15 @@ function TasksScreen() {
           <ScreenHeader src="/HeaderDOSTIZHENIYA.webp" alt="Достижения" />
           <div style={{
             position: "absolute", top: "14%", left: "4%", right: "4%", bottom: "2%",
-            zIndex: 51, display: "flex", flexDirection: "column",
+            zIndex: 51, display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <VerticalScrollList>
-              {TASKS.map((task) => (
-                <TaskCard key={task.id} task={task} persisted={persisted} onClaim={handleClaim} />
-              ))}
-            </VerticalScrollList>
+            <div style={{
+              color: "rgba(255,255,255,0.65)", fontSize: "4.5cqw", fontWeight: "600",
+              textAlign: "center", textShadow: "0 1px 6px rgba(0,0,0,0.8)",
+              lineHeight: 1.6, padding: "0 8%",
+            }}>
+              🏆<br />Достижения<br />скоро появятся!
+            </div>
           </div>
         </TaskSubScreen>
       )}
@@ -1518,13 +1552,25 @@ function App() {
   });
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  /* Create audio on mount */
+  /* Create audio on mount; start playing on first user interaction */
+  const soundOnRef = useRef(soundOn);
+  soundOnRef.current = soundOn;
   useEffect(() => {
     const audio = new Audio("/music.mp3");
     audio.loop = true;
     audio.volume = 0.4;
     audioRef.current = audio;
-    if (soundOn) audio.play().catch(() => {});
+    if (soundOnRef.current) {
+      audio.play().catch(() => {
+        /* Autoplay blocked — unlock on first touch */
+        const unlock = () => {
+          if (audioRef.current && soundOnRef.current) {
+            audioRef.current.play().catch(() => {});
+          }
+        };
+        document.addEventListener("pointerdown", unlock, { once: true });
+      });
+    }
     return () => { audio.pause(); audioRef.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
