@@ -8,52 +8,57 @@ const queryClient = new QueryClient({
 });
 
 /* ─── Sound effect helpers ─────────────────────────────────────────
-   Pre-loaded pools so playback is instant with zero decode lag.
+   Web Audio API with pre-decoded AudioBuffers — zero decode lag,
+   truly instant playback on every press.
    Not tied to the music on/off toggle.                               */
-const CLICK_POOL_SIZE = 5;
-let _clickPool: HTMLAudioElement[] | null = null;
-let _clickIdx = 0;
-let _notifAudio: HTMLAudioElement | null = null;
+let _audioCtx: AudioContext | null = null;
+let _clickBuffer: AudioBuffer | null = null;
+let _notifBuffer: AudioBuffer | null = null;
 
-function _buildClickPool() {
-  _clickPool = Array.from({ length: CLICK_POOL_SIZE }, () => {
-    const a = new Audio("/click.mp3");
-    a.volume = 0.22;
-    a.preload = "auto";
-    return a;
-  });
-}
-function _buildNotif() {
-  _notifAudio = new Audio("/notification.mp3");
-  _notifAudio.volume = 0.32;
-  _notifAudio.preload = "auto";
+function _getCtx(): AudioContext {
+  if (!_audioCtx) _audioCtx = new AudioContext();
+  return _audioCtx;
 }
 
-/* Bootstrap pools on first interaction so decode happens once */
+async function _decodeUrl(url: string): Promise<AudioBuffer> {
+  const ctx = _getCtx();
+  const res = await fetch(url);
+  const arr = await res.arrayBuffer();
+  return ctx.decodeAudioData(arr);
+}
+
+/* Bootstrap buffers on first interaction so decode happens once */
 let _poolsReady = false;
 function _ensurePools() {
   if (_poolsReady) return;
   _poolsReady = true;
-  _buildClickPool();
-  _buildNotif();
+  const ctx = _getCtx();
+  /* Resume context (required by autoplay policy) */
+  if (ctx.state === "suspended") ctx.resume().catch(() => {});
+  _decodeUrl("/click.mp3").then((buf) => { _clickBuffer = buf; }).catch(() => {});
+  _decodeUrl("/notification.mp3").then((buf) => { _notifBuffer = buf; }).catch(() => {});
 }
 document.addEventListener("pointerdown", _ensurePools, { once: true });
 
-function playClick() {
+function _playBuffer(buffer: AudioBuffer, volume: number) {
   try {
-    if (!_clickPool) return;
-    const a = _clickPool[_clickIdx % CLICK_POOL_SIZE];
-    _clickIdx++;
-    a.currentTime = 0;
-    a.play().catch(() => {});
+    const ctx = _getCtx();
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const gain = ctx.createGain();
+    gain.gain.value = volume;
+    src.connect(gain);
+    gain.connect(ctx.destination);
+    src.start(0);
   } catch { /* ignore */ }
 }
+
+function playClick() {
+  if (_clickBuffer) _playBuffer(_clickBuffer, 0.22);
+}
 function playNotification() {
-  try {
-    if (!_notifAudio) return;
-    _notifAudio.currentTime = 0;
-    _notifAudio.play().catch(() => {});
-  } catch { /* ignore */ }
+  if (_notifBuffer) _playBuffer(_notifBuffer, 0.32);
 }
 
 /* ─── Growth phases ──────────────────────────────────────────────── */
@@ -1586,9 +1591,9 @@ function App() {
 
   const toggleSound = () => setSoundOn((v) => !v);
 
-  /* Global click-sound listener — fires for any button or cursor:pointer element */
+  /* Global click-sound listener — fires on pointerdown for zero perceived latency */
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
+    const handler = (e: PointerEvent) => {
       const el = e.target as HTMLElement;
       try {
         if (el.closest("button") || window.getComputedStyle(el).cursor === "pointer") {
@@ -1596,8 +1601,8 @@ function App() {
         }
       } catch { /* ignore */ }
     };
-    document.addEventListener("click", handler, { capture: true });
-    return () => document.removeEventListener("click", handler, { capture: true });
+    document.addEventListener("pointerdown", handler, { capture: true });
+    return () => document.removeEventListener("pointerdown", handler, { capture: true });
   }, []);
 
   /* single save point — fires after every state change */
