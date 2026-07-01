@@ -143,9 +143,16 @@ interface PlotState {
   phaseIdx: number;
   phaseStartedAt: number;
   harvestPresses: number;
-  growthWatered: boolean;          // cycle-1 watered → 2× speed for phases 0-4
-  ripeningWaterCount: number;      // cycle-2 waters → +5% yield each, 2× speed
-  lastRipeningWateredAt: number;   // phaseStartedAt of ripening phase that was last watered
+  // ── Watering ──────────────────────────────────────────────────────────
+  growthWatered: boolean;          // watered in phases 0-4 this lifecycle → 2× speed
+  ripeningWaterCount: number;      // cumulative ripening waters → +5% yield base each
+  lastRipeningWateredAt: number;   // phaseStartedAt when ripening was last watered (per-phase dedup)
+  // ── Fertilizer (per-plot) ─────────────────────────────────────────────
+  fertilizerUsed: boolean;         // fertilizer already used in phase 0 this lifecycle
+  fertilizerRipeningCount: number; // ripening fertilizer uses this lifecycle (max 10, +15% yield each)
+  lastFertilizerRipeningAt: number;// phaseStartedAt when fertilizer was last applied in ripening
+  // ── Harvest bonus ─────────────────────────────────────────────────────
+  harvestBonus: number;            // +BASE_YIELD*0.05 accumulated per harvest press this lifecycle
 }
 
 interface Inventory {
@@ -177,6 +184,8 @@ function emptyPlot(): PlotState {
   return {
     gameState: "idle", phaseIdx: 0, phaseStartedAt: 0, harvestPresses: 0,
     growthWatered: false, ripeningWaterCount: 0, lastRipeningWateredAt: 0,
+    fertilizerUsed: false, fertilizerRipeningCount: 0, lastFertilizerRipeningAt: 0,
+    harvestBonus: 0,
   };
 }
 
@@ -190,7 +199,8 @@ function resolvePlot(plot: PlotState, now: number): PlotState {
     let dur = baseDur;
     if (cur.gameState === "growing") {
       if (cur.phaseIdx <= 4 && cur.growthWatered) dur = baseDur / 2;
-      else if (cur.phaseIdx === PHASE6_IDX && cur.ripeningWaterCount > 0) dur = baseDur / 2;
+      // Ripening speed boost only applies when THIS phase was watered
+      else if (cur.phaseIdx === PHASE6_IDX && cur.lastRipeningWateredAt === cur.phaseStartedAt) dur = baseDur / 2;
     }
     const elapsed = (now - cur.phaseStartedAt) / 1000;
     if (elapsed < dur) break;
@@ -212,7 +222,7 @@ function resolveState(s: PersistedState, now: number): PersistedState {
   return { ...s, plots: s.plots.map((p) => resolvePlot(p, now)) };
 }
 
-const STORAGE_KEY = "orchard_v11";
+const STORAGE_KEY = "orchard_v12";
 
 function loadState(): PersistedState {
   const urlRef = new URLSearchParams(window.location.search).get("ref") ?? null;
@@ -225,10 +235,15 @@ function loadState(): PersistedState {
         ...s,
         autoWateringCyclesLeft: s.autoWateringCyclesLeft ?? 0,
         plots: s.plots.map((p) => ({
+          ...emptyPlot(),
           ...p,
           growthWatered: p.growthWatered ?? false,
           ripeningWaterCount: p.ripeningWaterCount ?? 0,
-          lastRipeningWateredAt: (p as PlotState & { lastAutoRipeningAt?: number }).lastAutoRipeningAt ?? (p as PlotState).lastRipeningWateredAt ?? 0,
+          lastRipeningWateredAt: p.lastRipeningWateredAt ?? 0,
+          fertilizerUsed: p.fertilizerUsed ?? false,
+          fertilizerRipeningCount: p.fertilizerRipeningCount ?? 0,
+          lastFertilizerRipeningAt: p.lastFertilizerRipeningAt ?? 0,
+          harvestBonus: p.harvestBonus ?? 0,
         })),
       };
       if (urlRef && !migrated.referredBy) return { ...migrated, referredBy: urlRef };
@@ -532,7 +547,6 @@ function Game() {
   );
   const [pops, setPops] = useState<HarvestPop[]>([]);
   const [waterMsg, setWaterMsg] = useState("");
-  const [waterCooldown, setWaterCooldown] = useState(false);
   const popIdRef = useRef(0);
   useEffect(() => { saveState(persisted); }, [persisted]);
   const ref = useRef(persisted); ref.current = persisted;
@@ -601,13 +615,12 @@ function Game() {
         plots: p.plots.map((pl, i) =>
           i === p.currentPlotIdx
             ? {
-                ...pl,
+                ...emptyPlot(),
                 gameState: "planting" as GameState,
                 phaseIdx: 0,
                 phaseStartedAt: Date.now(),
+                harvestPresses: pl.harvestPresses,
                 growthWatered: autoWater,
-                ripeningWaterCount: 0,
-                lastRipeningWateredAt: 0,
               }
             : pl
         ),
@@ -620,8 +633,12 @@ function Game() {
 
   function handleHarvest() {
     setPersisted((s) => {
-      const currentPlot = s.plots[s.currentPlotIdx];
-      const plotYield = Math.round(BASE_YIELD * (1 + 0.05 * (currentPlot?.ripeningWaterCount ?? 0)));
+      const cp = s.plots[s.currentPlotIdx];
+      if (!cp) return s;
+      // Yield = (base + harvestBonus + waterBonus) × fertilizerMultiplier
+      const base = BASE_YIELD + (cp.harvestBonus ?? 0);
+      const waterBonus = (cp.ripeningWaterCount ?? 0) * BASE_YIELD * 0.05;
+      const plotYield = Math.round((base + waterBonus) * Math.pow(1.15, cp.fertilizerRipeningCount ?? 0));
       const id = ++popIdRef.current;
       setTimeout(() => { setPops((prev) => [...prev, { id, amount: plotYield }]); }, 0);
       if (s.referredBy) peerAddHarvest(s.referredBy, s.playerId, plotYield);
@@ -630,32 +647,68 @@ function Game() {
         fruit: s.fruit + plotYield,
         plots: s.plots.map((p, i) =>
           i === s.currentPlotIdx
-            ? { ...p, phaseIdx: WINDDOWN_PHASE_IDX, phaseStartedAt: Date.now(), harvestPresses: p.harvestPresses + 1 }
+            ? {
+                ...p,
+                phaseIdx: WINDDOWN_PHASE_IDX,
+                phaseStartedAt: Date.now(),
+                harvestPresses: p.harvestPresses + 1,
+                harvestBonus: (p.harvestBonus ?? 0) + BASE_YIELD * 0.05, // +5% base per harvest
+              }
             : p
         ),
       };
     });
   }
 
-  /* Watering via ad — applies to all active trees */
+  /* Watering — applies to ALL active trees once per applicable cycle */
   function handleWater() {
-    if (waterCooldown) return;
-    setWaterCooldown(true);
     setWaterMsg("💧 Деревья политы!");
-    setTimeout(() => { setWaterMsg(""); setWaterCooldown(false); }, 2500);
+    setTimeout(() => setWaterMsg(""), 2000);
     setPersisted((s) => ({
       ...s,
       plots: s.plots.map((p) => {
         if (p.gameState !== "growing") return p;
-        // Cycle 1: water growth once per lifecycle
-        if (p.phaseIdx <= 4 && !p.growthWatered)
-          return { ...p, growthWatered: true };
-        // Cycle 2: water ripening once per ripening phase (identified by phaseStartedAt)
+        if (p.phaseIdx <= 4 && !p.growthWatered) return { ...p, growthWatered: true };
         if (p.phaseIdx === PHASE6_IDX && p.phaseStartedAt !== p.lastRipeningWateredAt)
           return { ...p, ripeningWaterCount: p.ripeningWaterCount + 1, lastRipeningWateredAt: p.phaseStartedAt };
         return p;
       }),
     }));
+  }
+
+  /* Fertilizer — applies only to the currently viewed tree */
+  function handleFertilize() {
+    setPersisted((s) => {
+      if (s.inventory.udobrenie <= 0) return s;
+      const cp = s.plots[s.currentPlotIdx];
+      if (!cp || cp.gameState !== "growing") return s;
+      const newInv = { ...s.inventory, udobrenie: s.inventory.udobrenie - 1 };
+      // Phase 0 (Phase 1): skip to ripening
+      if (cp.phaseIdx === 0 && !cp.fertilizerUsed) {
+        return {
+          ...s, inventory: newInv,
+          plots: s.plots.map((p, i) =>
+            i === s.currentPlotIdx
+              ? { ...p, fertilizerUsed: true, phaseIdx: PHASE6_IDX, phaseStartedAt: Date.now() }
+              : p
+          ),
+        };
+      }
+      // Phase 6 (ripening): +15% yield, max 10 uses
+      if (cp.phaseIdx === PHASE6_IDX &&
+          cp.phaseStartedAt !== cp.lastFertilizerRipeningAt &&
+          cp.fertilizerRipeningCount < 10) {
+        return {
+          ...s, inventory: newInv,
+          plots: s.plots.map((p, i) =>
+            i === s.currentPlotIdx
+              ? { ...p, fertilizerRipeningCount: p.fertilizerRipeningCount + 1, lastFertilizerRipeningAt: p.phaseStartedAt }
+              : p
+          ),
+        };
+      }
+      return s;
+    });
   }
 
   return (
@@ -718,37 +771,27 @@ function Game() {
             onDone={() => setPops((prev) => prev.filter((p) => p.id !== pop.id))} />
         ))}
 
-        {/* Water button — visible while any tree is in growth or ripening cycle */}
-        {plots.some((p) => p.gameState === "growing" && p.phaseIdx <= PHASE6_IDX) && (() => {
-          // Active when at least one tree can still receive watering this cycle
-          const canWater = !waterCooldown && plots.some((p) => {
-            if (p.gameState !== "growing") return false;
-            if (p.phaseIdx <= 4 && !p.growthWatered) return true;
-            if (p.phaseIdx === PHASE6_IDX && p.phaseStartedAt !== p.lastRipeningWateredAt) return true;
-            return false;
-          });
-          return (
+        {/* ── Water button: disappears after use, reappears each new applicable cycle ── */}
+        {plots.some((p) => {
+          if (p.gameState !== "growing") return false;
+          if (p.phaseIdx <= 4 && !p.growthWatered) return true;
+          if (p.phaseIdx === PHASE6_IDX && p.phaseStartedAt !== p.lastRipeningWateredAt) return true;
+          return false;
+        }) && (
           <div style={{
             position: "absolute", left: "3%", bottom: "22%",
             zIndex: 26, display: "flex", flexDirection: "column", alignItems: "center", gap: "1cqw",
           }}>
-            <button
-              onClick={canWater ? handleWater : undefined}
-              style={{
-                width: "16cqw", padding: 0, border: "none", background: "transparent",
-                cursor: canWater ? "pointer" : "default",
-                transition: "transform 0.12s",
-                userSelect: "none",
-              }}
-              onPointerDown={(e) => { if (canWater) (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.9)"; }}
+            <button onClick={handleWater} style={{
+              width: "16cqw", padding: 0, border: "none", background: "transparent",
+              cursor: "pointer", transition: "transform 0.12s", userSelect: "none",
+            }}
+              onPointerDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.9)"; }}
               onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
               onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
             >
-              <img
-                src={canWater ? "/KnopkaPoliv.webp" : "/KnopkaPoliv2.webp"}
-                alt="Полив" draggable={false}
-                style={{ width: "100%", display: "block", userSelect: "none" }}
-              />
+              <img src="/KnopkaPoliv.webp" alt="Полив" draggable={false}
+                style={{ width: "100%", display: "block", userSelect: "none" }} />
             </button>
             {persisted.autoWateringCyclesLeft > 0 && (
               <div style={{
@@ -759,8 +802,28 @@ function Game() {
               }}>АП: {persisted.autoWateringCyclesLeft}</div>
             )}
           </div>
-          );
-        })()}
+        )}
+
+        {/* ── Fertilizer button: per current tree, disappears after use ── */}
+        {gameState === "growing" && persisted.inventory.udobrenie > 0 && (
+          (phaseIdx === 0 && !currentPlot.fertilizerUsed) ||
+          (phaseIdx === PHASE6_IDX &&
+            currentPlot.phaseStartedAt !== currentPlot.lastFertilizerRipeningAt &&
+            currentPlot.fertilizerRipeningCount < 10)
+        ) && (
+          <button onClick={handleFertilize} style={{
+            position: "absolute", right: "3%", bottom: "22%",
+            width: "16cqw", padding: 0, border: "none", background: "transparent",
+            cursor: "pointer", zIndex: 26, transition: "transform 0.12s", userSelect: "none",
+          }}
+            onPointerDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.9)"; }}
+            onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+            onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+          >
+            <img src="/KnopkaUdobrenie.webp" alt="Удобрить" draggable={false}
+              style={{ width: "100%", display: "block", userSelect: "none" }} />
+          </button>
+        )}
 
         {/* Water toast */}
         {waterMsg && (
@@ -905,7 +968,7 @@ function FriendsScreen() {
           <div style={{
             position: "absolute",
             bottom: "8%", left: "50%", transform: "translateX(-50%)",
-            width: "58%", cursor: "pointer", userSelect: "none",
+            width: "29%", cursor: "pointer", userSelect: "none",
           }}
             onClick={handleInvite}
             onPointerDown={(e) => { (e.currentTarget as HTMLDivElement).style.transform = "translateX(-50%) scale(0.95)"; }}
