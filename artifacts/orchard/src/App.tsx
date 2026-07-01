@@ -185,6 +185,9 @@ const PersistedCtx = createContext<
   [PersistedState, React.Dispatch<React.SetStateAction<PersistedState>>]
 >(null!);
 
+/* Sound on/off context — shared across all screens */
+const SoundCtx = createContext<[boolean, () => void]>([true, () => {}]);
+
 function emptyPlot(): PlotState {
   return {
     gameState: "idle", phaseIdx: 0, phaseStartedAt: 0, harvestPresses: 0,
@@ -350,6 +353,11 @@ function TopBar({ cedro, fruit }: { cedro: number; fruit: number }) {
 
 function NavBar() {
   const [, navigate] = useLocation();
+  const [persisted] = useContext(PersistedCtx);
+  /* Show badge on "zadaniya" when any task is done but not yet claimed */
+  const hasTaskBadge = TASKS.some(
+    (t) => t.check(persisted) && !persisted.claimedTaskIds.includes(t.id)
+  );
   return (
     <div style={{
       position: "absolute", bottom: "5.2%", left: "3%", right: "3%",
@@ -357,13 +365,22 @@ function NavBar() {
     }}>
       {NAV.map((item) => (
         <button key={item.id} onClick={() => navigate(item.path)}
-          style={{ flex: "0 0 22%", padding: 0, border: "none", background: "transparent", cursor: "pointer" }}
+          style={{ flex: "0 0 22%", padding: 0, border: "none", background: "transparent",
+            cursor: "pointer", position: "relative" }}
           onPointerDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.92)"; }}
           onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
           onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
         >
           <img src={item.img} alt={item.label} draggable={false}
             style={{ width: "100%", display: "block", userSelect: "none" }} />
+          {/* Notification badge for задания button */}
+          {item.id === "zadaniya" && hasTaskBadge && (
+            <img src="/UvedomleniePN.webp" alt="" draggable={false}
+              style={{
+                position: "absolute", top: "-8%", right: "-5%",
+                width: "30%", pointerEvents: "none", userSelect: "none",
+              }} />
+          )}
         </button>
       ))}
     </div>
@@ -454,6 +471,32 @@ function CarouselArrow({ dir, active, onClick }: { dir: "up" | "down"; active: b
       onPointerUp={()   => { if (ref.current) ref.current.style.transform = "scale(1)"; }}
       onPointerLeave={() => { if (ref.current) ref.current.style.transform = "scale(1)"; }}
     >{dir === "up" ? "▲" : "▼"}</div>
+  );
+}
+
+/* ─── Sound toggle button ────────────────────────────────────────── */
+function SoundButton() {
+  const [soundOn, toggleSound] = useContext(SoundCtx);
+  const ref = useRef<HTMLDivElement>(null);
+  return (
+    <div
+      ref={ref}
+      onClick={toggleSound}
+      style={{
+        position: "absolute", top: "2%", right: "3%",
+        width: "10%", aspectRatio: "1",
+        zIndex: 35, cursor: "pointer", userSelect: "none",
+        transition: "filter 0.2s, opacity 0.2s",
+        filter: soundOn ? "none" : "grayscale(1)",
+        opacity: soundOn ? 1 : 0.55,
+      }}
+      onPointerDown={() => { if (ref.current) ref.current.style.transform = "scale(0.88)"; }}
+      onPointerUp={()   => { if (ref.current) ref.current.style.transform = "scale(1)"; }}
+      onPointerLeave={() => { if (ref.current) ref.current.style.transform = "scale(1)"; }}
+    >
+      <img src="/KnopkaZVUK.webp" alt="Звук" draggable={false}
+        style={{ width: "100%", display: "block", userSelect: "none" }} />
+    </div>
   );
 }
 
@@ -724,6 +767,7 @@ function Game() {
       `}</style>
       <GameShell>
         <TopBar cedro={cedro} fruit={fruit} />
+        <SoundButton />
         <div style={{
           position: "absolute", left: "50%", bottom: "19.2%",
           width: "93.6%", aspectRatio: PHASE_ASPECT,
@@ -1226,12 +1270,21 @@ function TaskCard({ task, persisted, onClaim }: {
   const statusText  = isClaimed ? "✓ Получено" : isDone ? "Выполнено!" : "В процессе...";
   return (
     <div style={{
+      position: "relative",
       background: "rgba(20,10,0,0.72)", borderRadius: "4cqw",
       border: `0.5cqw solid ${isDone ? "rgba(244,200,66,0.7)" : "rgba(255,255,255,0.15)"}`,
       padding: "4cqw 5cqw", flexShrink: 0,
       boxShadow: isDone ? "0 0 20px rgba(244,200,66,0.25)" : "0 4px 20px rgba(0,0,0,0.5)",
       display: "flex", flexDirection: "column", gap: "2.5cqw",
     }}>
+      {/* Badge: done but not claimed */}
+      {canClaim && (
+        <img src="/ZadaniyaUVEDOMLENIE.webp" alt="" draggable={false}
+          style={{
+            position: "absolute", top: "-4%", right: "-2%",
+            width: "11%", pointerEvents: "none", userSelect: "none", zIndex: 2,
+          }} />
+      )}
       <div style={{
         fontSize: "5cqw", fontWeight: "800", color: "#f4c842",
         textShadow: "0 1px 6px rgba(0,0,0,0.8)", textAlign: "center",
@@ -1318,11 +1371,13 @@ function TasksScreen() {
         zIndex: 20,
       }}>
         {ZADANIYA_TABS.map((tab) => {
-          const ref = { current: null as HTMLSpanElement | null };
+          /* Badge on "tasks" tab if any task claimable */
+          const showBadge = tab.id === "tasks" &&
+            TASKS.some((t) => t.check(persisted) && !persisted.claimedTaskIds.includes(t.id));
           return (
             <div key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              style={{ width: "100%", cursor: "pointer", userSelect: "none" }}
+              style={{ width: "100%", cursor: "pointer", userSelect: "none", position: "relative" }}
               onPointerDown={(e) => {
                 const span = e.currentTarget.querySelector("span") as HTMLSpanElement | null;
                 if (span) span.style.transform = "scale(0.95)";
@@ -1340,6 +1395,13 @@ function TasksScreen() {
                 <img src={tab.img} alt={tab.label} draggable={false}
                   style={{ width: "100%", display: "block", userSelect: "none" }} />
               </span>
+              {showBadge && (
+                <img src="/ZadaniyaUVEDOMLENIE.webp" alt="" draggable={false}
+                  style={{
+                    position: "absolute", top: "-3%", right: "0%",
+                    width: "8%", pointerEvents: "none", userSelect: "none", zIndex: 2,
+                  }} />
+              )}
             </div>
           );
         })}
@@ -1419,6 +1481,35 @@ function App() {
     resolveState(loadState(), Date.now())
   );
 
+  /* ── Sound ── */
+  const [soundOn, setSoundOn] = useState<boolean>(() => {
+    const v = localStorage.getItem("orchard_sound");
+    return v === null ? true : v === "true";
+  });
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  /* Create audio on mount */
+  useEffect(() => {
+    const audio = new Audio("/music.mp3");
+    audio.loop = true;
+    audio.volume = 0.4;
+    audioRef.current = audio;
+    if (soundOn) audio.play().catch(() => {});
+    return () => { audio.pause(); audioRef.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* React to toggle */
+  useEffect(() => {
+    localStorage.setItem("orchard_sound", String(soundOn));
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (soundOn) audio.play().catch(() => {});
+    else audio.pause();
+  }, [soundOn]);
+
+  const toggleSound = () => setSoundOn((v) => !v);
+
   /* single save point — fires after every state change */
   useEffect(() => { saveState(persisted); }, [persisted]);
 
@@ -1436,11 +1527,13 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <PersistedCtx.Provider value={[persisted, setPersisted]}>
-          <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "") || ""}>
-            <Router />
-          </WouterRouter>
-        </PersistedCtx.Provider>
+        <SoundCtx.Provider value={[soundOn, toggleSound]}>
+          <PersistedCtx.Provider value={[persisted, setPersisted]}>
+            <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "") || ""}>
+              <Router />
+            </WouterRouter>
+          </PersistedCtx.Provider>
+        </SoundCtx.Provider>
       </TooltipProvider>
     </QueryClientProvider>
   );
