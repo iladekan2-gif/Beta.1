@@ -11,14 +11,14 @@ const queryClient = new QueryClient({
    These are always audible — not tied to the music on/off toggle.    */
 function playClick() {
   try {
-    const a = new Audio("/click.wav");
+    const a = new Audio("/click.mp3");
     a.volume = 0.22;
     a.play().catch(() => {});
   } catch { /* ignore */ }
 }
 function playNotification() {
   try {
-    const a = new Audio("/notification.wav");
+    const a = new Audio("/notification.mp3");
     a.volume = 0.32;
     a.play().catch(() => {});
   } catch { /* ignore */ }
@@ -508,7 +508,7 @@ function SoundButton() {
       ref={ref}
       onClick={toggleSound}
       style={{
-        position: "absolute", top: "2%", right: "3%",
+        position: "absolute", top: "12%", right: "3%",
         width: "10%", aspectRatio: "1",
         zIndex: 35, cursor: "pointer", userSelect: "none",
         transition: "filter 0.2s, opacity 0.2s",
@@ -1403,9 +1403,9 @@ function TasksScreen() {
         zIndex: 20,
       }}>
         {ZADANIYA_TABS.map((tab) => {
-          /* Badge on "tasks" tab if any task claimable */
-          const showBadge = tab.id === "tasks" &&
-            TASKS.some((t) => t.check(persisted) && !persisted.claimedTaskIds.includes(t.id));
+          /* Badge on "tasks" and "achievements" tabs if any task claimable */
+          const hasClaimable = TASKS.some((t) => t.check(persisted) && !persisted.claimedTaskIds.includes(t.id));
+          const showBadge = (tab.id === "tasks" || tab.id === "achievements") && hasClaimable;
           return (
             <div key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -1461,15 +1461,13 @@ function TasksScreen() {
           <ScreenHeader src="/HeaderDOSTIZHENIYA.webp" alt="Достижения" />
           <div style={{
             position: "absolute", top: "14%", left: "4%", right: "4%", bottom: "2%",
-            zIndex: 51, display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 51, display: "flex", flexDirection: "column",
           }}>
-            <div style={{
-              color: "rgba(255,255,255,0.65)", fontSize: "4.5cqw", fontWeight: "600",
-              textAlign: "center", textShadow: "0 1px 6px rgba(0,0,0,0.8)",
-              lineHeight: 1.6, padding: "0 8%",
-            }}>
-              🏆<br />Достижения<br />скоро появятся!
-            </div>
+            <VerticalScrollList>
+              {TASKS.map((task) => (
+                <TaskCard key={task.id} task={task} persisted={persisted} onClaim={handleClaim} />
+              ))}
+            </VerticalScrollList>
           </div>
         </TaskSubScreen>
       )}
