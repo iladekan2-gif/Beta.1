@@ -7,6 +7,23 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 });
 
+/* ─── Sound effect helpers ─────────────────────────────────────────
+   These are always audible — not tied to the music on/off toggle.    */
+function playClick() {
+  try {
+    const a = new Audio("/click.wav");
+    a.volume = 0.22;
+    a.play().catch(() => {});
+  } catch { /* ignore */ }
+}
+function playNotification() {
+  try {
+    const a = new Audio("/notification.wav");
+    a.volume = 0.32;
+    a.play().catch(() => {});
+  } catch { /* ignore */ }
+}
+
 /* ─── Growth phases ──────────────────────────────────────────────── */
 const GROWTH_PHASES: { img: string; duration: number }[] = [
   { img: "/DerevoFaza1.webp", duration: 120 },
@@ -358,6 +375,14 @@ function NavBar() {
   const hasTaskBadge = TASKS.some(
     (t) => t.check(persisted) && !persisted.claimedTaskIds.includes(t.id)
   );
+
+  /* Play notification sound when badge first appears (skip on initial mount) */
+  const mountedNavBar = useRef(false);
+  useEffect(() => {
+    if (!mountedNavBar.current) { mountedNavBar.current = true; return; }
+    if (hasTaskBadge) playNotification();
+  }, [hasTaskBadge]);
+
   return (
     <div style={{
       position: "absolute", bottom: "5.2%", left: "3%", right: "3%",
@@ -642,6 +667,13 @@ function Game() {
     ? "/DerevoFaza0.webp"
     : GROWTH_PHASES[phaseIdx]?.img ?? GROWTH_PHASES[GROWTH_PHASES.length - 1].img;
   const showHarvestBtn = gameState === "growing" && phaseIdx === HARVEST_PHASE_IDX;
+
+  /* Play notification sound when harvest button first appears */
+  const prevShowHarvest = useRef(false);
+  useEffect(() => {
+    if (showHarvestBtn && !prevShowHarvest.current) playNotification();
+    prevShowHarvest.current = showHarvestBtn;
+  }, [showHarvestBtn]);
 
   function handlePlant() {
     if (!hasSeedling) return;
@@ -1509,6 +1541,20 @@ function App() {
   }, [soundOn]);
 
   const toggleSound = () => setSoundOn((v) => !v);
+
+  /* Global click-sound listener — fires for any button or cursor:pointer element */
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const el = e.target as HTMLElement;
+      try {
+        if (el.closest("button") || window.getComputedStyle(el).cursor === "pointer") {
+          playClick();
+        }
+      } catch { /* ignore */ }
+    };
+    document.addEventListener("click", handler, { capture: true });
+    return () => document.removeEventListener("click", handler, { capture: true });
+  }, []);
 
   /* single save point — fires after every state change */
   useEffect(() => { saveState(persisted); }, [persisted]);
