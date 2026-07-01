@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useContext, createContext } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -179,6 +179,11 @@ interface PersistedState {
   claimedTaskIds: string[];
   autoWateringCyclesLeft: number; // remaining auto-water lifecycle cycles
 }
+
+/* ── Shared persisted-state context (all screens read/write this) ── */
+const PersistedCtx = createContext<
+  [PersistedState, React.Dispatch<React.SetStateAction<PersistedState>>]
+>(null!);
 
 function emptyPlot(): PlotState {
   return {
@@ -542,13 +547,10 @@ function PlotDots({ total, current }: { total: number; current: number }) {
 }
 
 function Game() {
-  const [persisted, setPersisted] = useState<PersistedState>(() =>
-    resolveState(loadState(), Date.now())
-  );
+  const [persisted, setPersisted] = useContext(PersistedCtx);
   const [pops, setPops] = useState<HarvestPop[]>([]);
   const [waterMsg, setWaterMsg] = useState("");
   const popIdRef = useRef(0);
-  useEffect(() => { saveState(persisted); }, [persisted]);
   const ref = useRef(persisted); ref.current = persisted;
 
   const { plots, currentPlotIdx, cedro, fruit } = persisted;
@@ -851,13 +853,9 @@ function Game() {
 ══════════════════════════════════════════════════════════════════ */
 function FriendsScreen() {
   const [, navigate] = useLocation();
-  const [persisted, setPersisted] = useState<PersistedState>(() =>
-    resolveState(loadState(), Date.now())
-  );
+  const [persisted, setPersisted] = useContext(PersistedCtx);
   const [topIdx, setTopIdx] = useState(0);
   const [copyMsg, setCopyMsg] = useState("");
-
-  useEffect(() => { saveState(persisted); }, [persisted]);
 
   const base = window.location.origin + (import.meta.env.BASE_URL?.replace(/\/$/, "") || "");
   const refLink = `${base}/?ref=${persisted.playerId}`;
@@ -964,10 +962,10 @@ function FriendsScreen() {
             }}>{copyMsg}</div>
           )}
 
-          {/* Invite button — image from DruzyaKnopkaInvite.webp */}
+          {/* Invite button — sits inside the panel with proper bottom inset */}
           <div style={{
             position: "absolute",
-            bottom: "8%", left: "50%", transform: "translateX(-50%)",
+            bottom: "5cqw", left: "50%", transform: "translateX(-50%)",
             width: "29%", cursor: "pointer", userSelect: "none",
           }}
             onClick={handleInvite}
@@ -1071,10 +1069,7 @@ function FriendCard({ friend, onClaim }: { friend: ComputedFriend; onClaim: () =
 ══════════════════════════════════════════════════════════════════ */
 function ShopScreen() {
   const [, navigate] = useLocation();
-  const [persisted, setPersisted] = useState<PersistedState>(() =>
-    resolveState(loadState(), Date.now())
-  );
-  useEffect(() => { saveState(persisted); }, [persisted]);
+  const [persisted, setPersisted] = useContext(PersistedCtx);
 
   function handleBuy(key: ItemKey) {
     setPersisted((p) => ({
@@ -1114,10 +1109,7 @@ function ShopScreen() {
 ══════════════════════════════════════════════════════════════════ */
 function WarehouseScreen() {
   const [, navigate] = useLocation();
-  const [persisted, setPersisted] = useState<PersistedState>(() =>
-    resolveState(loadState(), Date.now())
-  );
-  useEffect(() => { saveState(persisted); }, [persisted]);
+  const [persisted, setPersisted] = useContext(PersistedCtx);
 
   const ownedItems = SHOP_ITEMS.filter((it) => persisted.inventory[it.key] > 0);
   const hasAnyIdle = persisted.plots.some((p) => p.gameState === "idle");
@@ -1293,11 +1285,8 @@ type ZadaniyaTab = typeof ZADANIYA_TABS[number]["id"];
 
 function TasksScreen() {
   const [, navigate] = useLocation();
-  const [persisted, setPersisted] = useState<PersistedState>(() =>
-    resolveState(loadState(), Date.now())
-  );
+  const [persisted, setPersisted] = useContext(PersistedCtx);
   const [activeTab, setActiveTab] = useState<ZadaniyaTab | null>(null);
-  useEffect(() => { saveState(persisted); }, [persisted]);
 
   function handleClaim(taskId: string) {
     const task = TASKS.find((t) => t.id === taskId);
@@ -1426,12 +1415,32 @@ function Router() {
 }
 
 function App() {
+  const [persisted, setPersisted] = useState<PersistedState>(() =>
+    resolveState(loadState(), Date.now())
+  );
+
+  /* single save point — fires after every state change */
+  useEffect(() => { saveState(persisted); }, [persisted]);
+
+  /* also save synchronously before tab/app closes */
+  useEffect(() => {
+    const handler = () => saveState(persisted);
+    window.addEventListener("pagehide", handler);
+    window.addEventListener("beforeunload", handler);
+    return () => {
+      window.removeEventListener("pagehide", handler);
+      window.removeEventListener("beforeunload", handler);
+    };
+  }, [persisted]);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "") || ""}>
-          <Router />
-        </WouterRouter>
+        <PersistedCtx.Provider value={[persisted, setPersisted]}>
+          <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "") || ""}>
+            <Router />
+          </WouterRouter>
+        </PersistedCtx.Provider>
       </TooltipProvider>
     </QueryClientProvider>
   );
