@@ -73,7 +73,7 @@ const GROWTH_PHASES: { img: string; duration: number }[] = [
   { img: "/DerevoFaza8.webp", duration: 30  },
 ];
 
-const PHASE_ASPECT       = "660 / 700";
+const PHASE_ASPECT       = "485 / 700";
 const PHASE6_IDX         = 5;
 const HARVEST_PHASE_IDX  = 6;
 const WINDDOWN_PHASE_IDX = 7;
