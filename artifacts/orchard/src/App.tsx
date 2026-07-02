@@ -957,7 +957,7 @@ function Game() {
         {/* Tree image */}
         <div style={{
           position: "absolute", left: "50%", bottom: "19.2%",
-          width: "93.6%", aspectRatio: PHASE_ASPECT,
+          width: "84.2%", aspectRatio: PHASE_ASPECT,
           transform: "translateX(-50%)", zIndex: 15, pointerEvents: "none",
         }}>
           <img src={plotImg} alt="" draggable={false} style={{
