@@ -576,7 +576,7 @@ function HarvestPopLabel({ amount, onDone }: { amount: number; onDone: () => voi
       width: "45cqw",
     }}>
       <div style={{ position: "relative", width: "100%" }}>
-        <img src="/Plody-SBOR.png" alt="" draggable={false}
+        <img src="/Plody-SBOR.webp" alt="" draggable={false}
           style={{ width: "100%", display: "block", userSelect: "none" }} />
         <span style={{
           position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
@@ -626,9 +626,9 @@ function MainNotification({ onDone }: { onDone: () => void }) {
     <div style={{
       position: "absolute", left: "50%", top: "22%", transform: "translateX(-50%)",
       zIndex: 45, pointerEvents: "none", animation: "notifPop 2s ease-out forwards",
-      width: "70cqw",
+      width: "35cqw",
     }}>
-      <img src="/Uvedomlenie-GLAVNIY.png" alt="" draggable={false}
+      <img src="/Uvedomlenie-GLAVNIY.webp" alt="" draggable={false}
         style={{ width: "100%", display: "block", userSelect: "none" }} />
     </div>
   );
@@ -813,7 +813,7 @@ function Game() {
   /* Watering — applies to ALL active trees once per applicable cycle */
   function handleWater() {
     const id = ++dropIdRef.current;
-    setDrops((prev) => [...prev, { id, src: "/Poliv-KAPLYA.png" }]);
+    setDrops((prev) => [...prev, { id, src: "/Poliv-KAPLYA.webp" }]);
     setPersisted((s) => ({
       ...s,
       plots: s.plots.map((p) => {
@@ -828,8 +828,10 @@ function Game() {
 
   /* Fertilizer — applies only to the currently viewed tree */
   function handleFertilize() {
-    const id = ++dropIdRef.current;
-    setDrops((prev) => [...prev, { id, src: "/Udobrenie-KAPLYA.png" }]);
+    if (fertilizerApplicable) {
+      const id = ++dropIdRef.current;
+      setDrops((prev) => [...prev, { id, src: "/Udobrenie-KAPLYA.webp" }]);
+    }
     setPersisted((s) => {
       if (s.inventory.udobrenie <= 0) return s;
       const cp = s.plots[s.currentPlotIdx];
@@ -882,13 +884,14 @@ function Game() {
     return false;
   });
 
-  /* Determine if fertilizer button should be shown */
-  const canFertilize = gameState === "growing" && persisted.inventory.udobrenie > 0 && (
+  /* Show fertilizer button whenever inventory has fertilizer and tree is active */
+  const canFertilize = gameState === "growing" && persisted.inventory.udobrenie > 0;
+  /* Whether fertilizer can actually be applied right now */
+  const fertilizerApplicable =
     (phaseIdx === 0 && !currentPlot.fertilizerUsed) ||
     (phaseIdx === PHASE6_IDX &&
       currentPlot.phaseStartedAt !== currentPlot.lastFertilizerRipeningAt &&
-      currentPlot.fertilizerRipeningCount < 10)
-  );
+      currentPlot.fertilizerRipeningCount < 10);
 
   return (
     <>
@@ -918,7 +921,7 @@ function Game() {
 
         {/* ── Water + Fertilizer buttons — top-left, under token balance ── */}
         <div style={{
-          position: "absolute", left: "3%", top: "13%",
+          position: "absolute", left: "3%", top: "10%",
           zIndex: 26, display: "flex", flexDirection: "column", gap: "1.5cqw",
         }}>
           {canWater && (
