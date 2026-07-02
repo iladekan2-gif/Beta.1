@@ -568,14 +568,69 @@ function SoundButton() {
 interface HarvestPop { id: number; amount: number }
 
 function HarvestPopLabel({ amount, onDone }: { amount: number; onDone: () => void }) {
-  useEffect(() => { const t = setTimeout(onDone, 1400); return () => clearTimeout(t); }, [onDone]);
+  useEffect(() => { const t = setTimeout(onDone, 1600); return () => clearTimeout(t); }, [onDone]);
   return (
     <div style={{
-      position: "absolute", left: "50%", bottom: "52%", transform: "translateX(-50%)",
-      zIndex: 40, pointerEvents: "none", animation: "harvestPop 1.4s ease-out forwards",
-      color: "#f4c842", fontSize: "7cqw", fontWeight: "800",
-      textShadow: "0 2px 8px rgba(0,0,0,0.8), 0 0 20px rgba(244,200,66,0.6)", whiteSpace: "nowrap",
-    }}>+{fmt(amount)}</div>
+      position: "absolute", left: "50%", top: "50%", transform: "translateX(-50%) translateY(-50%)",
+      zIndex: 40, pointerEvents: "none", animation: "harvestImgPop 1.6s ease-out forwards",
+      width: "45cqw",
+    }}>
+      <div style={{ position: "relative", width: "100%" }}>
+        <img src="/Plody-SBOR.png" alt="" draggable={false}
+          style={{ width: "100%", display: "block", userSelect: "none" }} />
+        <span style={{
+          position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: "7cqw", fontWeight: "900", color: "#fff",
+          textShadow: "0 2px 8px rgba(0,0,0,0.9)", lineHeight: 1,
+        }}>+{fmt(amount)}</span>
+      </div>
+    </div>
+  );
+}
+
+/* Falling drops overlay on tree crown */
+function DropsEffect({ src, onDone }: { src: string; onDone: () => void }) {
+  useEffect(() => { const t = setTimeout(onDone, 2200); return () => clearTimeout(t); }, [onDone]);
+  const drops = Array.from({ length: 12 }, (_, i) => ({
+    id: i,
+    left: 20 + Math.random() * 60,
+    delay: Math.random() * 0.8,
+    duration: 0.8 + Math.random() * 0.6,
+    size: 6 + Math.random() * 5,
+  }));
+  return (
+    <div style={{
+      position: "absolute", left: "3%", right: "3%", top: "8%", bottom: "30%",
+      zIndex: 20, pointerEvents: "none", overflow: "hidden",
+    }}>
+      {drops.map((d) => (
+        <div key={d.id} style={{
+          position: "absolute",
+          left: `${d.left}%`,
+          top: `${5 + Math.random() * 25}%`,
+          width: `${d.size}cqw`,
+          animation: `dropFall ${d.duration}s ${d.delay}s ease-in both`,
+        }}>
+          <img src={src} alt="" draggable={false}
+            style={{ width: "100%", display: "block", userSelect: "none" }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* Main screen notification popup */
+function MainNotification({ onDone }: { onDone: () => void }) {
+  useEffect(() => { const t = setTimeout(onDone, 2000); return () => clearTimeout(t); }, [onDone]);
+  return (
+    <div style={{
+      position: "absolute", left: "50%", top: "22%", transform: "translateX(-50%)",
+      zIndex: 45, pointerEvents: "none", animation: "notifPop 2s ease-out forwards",
+      width: "70cqw",
+    }}>
+      <img src="/Uvedomlenie-GLAVNIY.png" alt="" draggable={false}
+        style={{ width: "100%", display: "block", userSelect: "none" }} />
+    </div>
   );
 }
 
@@ -651,11 +706,15 @@ function PlotDots({ total, current }: { total: number; current: number }) {
   );
 }
 
+interface DropEffect { id: number; src: string }
+
 function Game() {
   const [persisted, setPersisted] = useContext(PersistedCtx);
   const [pops, setPops] = useState<HarvestPop[]>([]);
-  const [waterMsg, setWaterMsg] = useState("");
+  const [drops, setDrops] = useState<DropEffect[]>([]);
+  const [showNotif, setShowNotif] = useState(false);
   const popIdRef = useRef(0);
+  const dropIdRef = useRef(0);
   const ref = useRef(persisted); ref.current = persisted;
 
   const { plots, currentPlotIdx, cedro, fruit } = persisted;
@@ -667,32 +726,12 @@ function Game() {
   useEffect(() => {
     if (!anyActive) return;
     const id = setInterval(() => {
-      let next = resolveState(ref.current, Date.now());
-
-      /* Auto-watering: when cycles remain, auto-apply ripening water the first
-         time each new ripening phase (PHASE6_IDX) starts on any plot */
-      if (next.autoWateringCyclesLeft > 0) {
-        next = {
-          ...next,
-          plots: next.plots.map((p) => {
-            if (
-              p.gameState === "growing" &&
-              p.phaseIdx === PHASE6_IDX &&
-              p.phaseStartedAt !== p.lastRipeningWateredAt
-            ) {
-              return { ...p, ripeningWaterCount: p.ripeningWaterCount + 1, lastRipeningWateredAt: p.phaseStartedAt };
-            }
-            return p;
-          }),
-        };
-      }
-
+      const next = resolveState(ref.current, Date.now());
       const changed = next.plots.some((p, i) => {
         const prev = ref.current.plots[i];
         return (
           p.gameState !== prev?.gameState ||
-          p.phaseIdx !== prev?.phaseIdx ||
-          p.ripeningWaterCount !== prev?.ripeningWaterCount
+          p.phaseIdx !== prev?.phaseIdx
         );
       });
       if (changed) setPersisted(next);
@@ -722,10 +761,8 @@ function Game() {
         extraFruit = REFERRAL_BONUS;
         peerRegister(p.referredBy, p.playerId, `#${p.playerId.slice(0, 6)}`);
       }
-      const autoWater = p.autoWateringCyclesLeft > 0;
       return {
         ...p,
-        autoWateringCyclesLeft: autoWater ? p.autoWateringCyclesLeft - 1 : p.autoWateringCyclesLeft,
         plots: p.plots.map((pl, i) =>
           i === p.currentPlotIdx
             ? {
@@ -734,7 +771,6 @@ function Game() {
                 phaseIdx: 0,
                 phaseStartedAt: Date.now(),
                 harvestPresses: pl.harvestPresses,
-                growthWatered: autoWater,
               }
             : pl
         ),
@@ -776,8 +812,8 @@ function Game() {
 
   /* Watering — applies to ALL active trees once per applicable cycle */
   function handleWater() {
-    setWaterMsg("💧 Деревья политы!");
-    setTimeout(() => setWaterMsg(""), 2000);
+    const id = ++dropIdRef.current;
+    setDrops((prev) => [...prev, { id, src: "/Poliv-KAPLYA.png" }]);
     setPersisted((s) => ({
       ...s,
       plots: s.plots.map((p) => {
@@ -792,12 +828,13 @@ function Game() {
 
   /* Fertilizer — applies only to the currently viewed tree */
   function handleFertilize() {
+    const id = ++dropIdRef.current;
+    setDrops((prev) => [...prev, { id, src: "/Udobrenie-KAPLYA.png" }]);
     setPersisted((s) => {
       if (s.inventory.udobrenie <= 0) return s;
       const cp = s.plots[s.currentPlotIdx];
       if (!cp || cp.gameState !== "growing") return s;
       const newInv = { ...s.inventory, udobrenie: s.inventory.udobrenie - 1 };
-      // Phase 0 (Phase 1): skip to ripening
       if (cp.phaseIdx === 0 && !cp.fertilizerUsed) {
         return {
           ...s, inventory: newInv,
@@ -808,7 +845,6 @@ function Game() {
           ),
         };
       }
-      // Phase 6 (ripening): +15% yield, max 10 uses
       if (cp.phaseIdx === PHASE6_IDX &&
           cp.phaseStartedAt !== cp.lastFertilizerRipeningAt &&
           cp.fertilizerRipeningCount < 10) {
@@ -825,18 +861,95 @@ function Game() {
     });
   }
 
+  /* Show main notification when a new task/achievement badge appears */
+  const hasTaskBadge = TASKS.some(
+    (t) => t.check(persisted) && !persisted.claimedTaskIds.includes(t.id)
+  );
+  const prevTaskBadge = useRef(false);
+  useEffect(() => {
+    if (hasTaskBadge && !prevTaskBadge.current) {
+      playNotification();
+      setShowNotif(true);
+    }
+    prevTaskBadge.current = hasTaskBadge;
+  }, [hasTaskBadge]);
+
+  /* Determine if water button should be shown */
+  const canWater = plots.some((p) => {
+    if (p.gameState !== "growing") return false;
+    if (p.phaseIdx <= 4 && !p.growthWatered) return true;
+    if (p.phaseIdx === PHASE6_IDX && p.phaseStartedAt !== p.lastRipeningWateredAt) return true;
+    return false;
+  });
+
+  /* Determine if fertilizer button should be shown */
+  const canFertilize = gameState === "growing" && persisted.inventory.udobrenie > 0 && (
+    (phaseIdx === 0 && !currentPlot.fertilizerUsed) ||
+    (phaseIdx === PHASE6_IDX &&
+      currentPlot.phaseStartedAt !== currentPlot.lastFertilizerRipeningAt &&
+      currentPlot.fertilizerRipeningCount < 10)
+  );
+
   return (
     <>
       <style>{`
-        @keyframes harvestPop {
-          0%   { opacity:1; transform:translateX(-50%) translateY(0) scale(1); }
-          20%  { opacity:1; transform:translateX(-50%) translateY(-8%) scale(1.15); }
-          100% { opacity:0; transform:translateX(-50%) translateY(-30%) scale(0.9); }
+        @keyframes harvestImgPop {
+          0%   { opacity:1; transform:translateX(-50%) translateY(-50%) scale(0.8); }
+          15%  { opacity:1; transform:translateX(-50%) translateY(-60%) scale(1.1); }
+          60%  { opacity:1; transform:translateX(-50%) translateY(-70%) scale(1); }
+          100% { opacity:0; transform:translateX(-50%) translateY(-95%) scale(0.9); }
+        }
+        @keyframes dropFall {
+          0%   { opacity:1; transform:translateY(0); }
+          80%  { opacity:0.7; transform:translateY(18cqw); }
+          100% { opacity:0; transform:translateY(24cqw); }
+        }
+        @keyframes notifPop {
+          0%   { opacity:0; transform:translateX(-50%) scale(0.7); }
+          12%  { opacity:1; transform:translateX(-50%) scale(1.08); }
+          25%  { opacity:1; transform:translateX(-50%) scale(1); }
+          75%  { opacity:1; transform:translateX(-50%) scale(1); }
+          100% { opacity:0; transform:translateX(-50%) scale(0.85); }
         }
       `}</style>
       <GameShell>
         <TopBar cedro={cedro} fruit={fruit} />
         <SoundButton />
+
+        {/* ── Water + Fertilizer buttons — top-left, under token balance ── */}
+        <div style={{
+          position: "absolute", left: "3%", top: "13%",
+          zIndex: 26, display: "flex", flexDirection: "column", gap: "1.5cqw",
+        }}>
+          {canWater && (
+            <button onClick={handleWater} style={{
+              width: "16cqw", padding: 0, border: "none", background: "transparent",
+              cursor: "pointer", transition: "transform 0.12s", userSelect: "none",
+            }}
+              onPointerDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.9)"; }}
+              onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+              onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+            >
+              <img src="/KnopkaPoliv.webp" alt="Полив" draggable={false}
+                style={{ width: "100%", display: "block", userSelect: "none" }} />
+            </button>
+          )}
+          {canFertilize && (
+            <button onClick={handleFertilize} style={{
+              width: "16cqw", padding: 0, border: "none", background: "transparent",
+              cursor: "pointer", transition: "transform 0.12s", userSelect: "none",
+            }}
+              onPointerDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.9)"; }}
+              onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+              onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+            >
+              <img src="/KnopkaUdobrenie.webp" alt="Удобрить" draggable={false}
+                style={{ width: "100%", display: "block", userSelect: "none" }} />
+            </button>
+          )}
+        </div>
+
+        {/* Tree image */}
         <div style={{
           position: "absolute", left: "50%", bottom: "19.2%",
           width: "93.6%", aspectRatio: PHASE_ASPECT,
@@ -847,6 +960,12 @@ function Game() {
             objectFit: "fill", userSelect: "none",
           }} />
         </div>
+
+        {/* Drops effects (water / fertilizer) */}
+        {drops.map((d) => (
+          <DropsEffect key={d.id} src={d.src}
+            onDone={() => setDrops((prev) => prev.filter((x) => x.id !== d.id))} />
+        ))}
 
         {gameState === "idle" && (
           <button onClick={hasSeedling ? handlePlant : undefined} style={{
@@ -866,6 +985,7 @@ function Game() {
 
         {gameState === "planting" && <PlantingTimer phaseStartedAt={currentPlot.phaseStartedAt} />}
 
+        {/* Harvest button */}
         {showHarvestBtn && (
           <button onClick={handleHarvest} style={{
             position: "absolute", left: "50%", top: "8%", transform: "translateX(-50%)",
@@ -881,75 +1001,15 @@ function Game() {
           </button>
         )}
 
+        {/* Harvest fruit pop — image with count */}
         {pops.map((pop) => (
           <HarvestPopLabel key={pop.id} amount={pop.amount}
             onDone={() => setPops((prev) => prev.filter((p) => p.id !== pop.id))} />
         ))}
 
-        {/* ── Water button: disappears after use, reappears each new applicable cycle ── */}
-        {plots.some((p) => {
-          if (p.gameState !== "growing") return false;
-          if (p.phaseIdx <= 4 && !p.growthWatered) return true;
-          if (p.phaseIdx === PHASE6_IDX && p.phaseStartedAt !== p.lastRipeningWateredAt) return true;
-          return false;
-        }) && (
-          <div style={{
-            position: "absolute", left: "3%", bottom: "22%",
-            zIndex: 26, display: "flex", flexDirection: "column", alignItems: "center", gap: "1cqw",
-          }}>
-            <button onClick={handleWater} style={{
-              width: "16cqw", padding: 0, border: "none", background: "transparent",
-              cursor: "pointer", transition: "transform 0.12s", userSelect: "none",
-            }}
-              onPointerDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.9)"; }}
-              onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
-              onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
-            >
-              <img src="/KnopkaPoliv.webp" alt="Полив" draggable={false}
-                style={{ width: "100%", display: "block", userSelect: "none" }} />
-            </button>
-            {persisted.autoWateringCyclesLeft > 0 && (
-              <div style={{
-                background: "rgba(30,90,200,0.82)", color: "#fff",
-                fontSize: "2.4cqw", fontWeight: "700", borderRadius: "2cqw",
-                padding: "0.4cqw 1.4cqw", whiteSpace: "nowrap",
-                border: "0.3cqw solid rgba(255,255,255,0.3)",
-              }}>АП: {persisted.autoWateringCyclesLeft}</div>
-            )}
-          </div>
-        )}
-
-        {/* ── Fertilizer button: per current tree, disappears after use ── */}
-        {gameState === "growing" && persisted.inventory.udobrenie > 0 && (
-          (phaseIdx === 0 && !currentPlot.fertilizerUsed) ||
-          (phaseIdx === PHASE6_IDX &&
-            currentPlot.phaseStartedAt !== currentPlot.lastFertilizerRipeningAt &&
-            currentPlot.fertilizerRipeningCount < 10)
-        ) && (
-          <button onClick={handleFertilize} style={{
-            position: "absolute", right: "3%", bottom: "22%",
-            width: "16cqw", padding: 0, border: "none", background: "transparent",
-            cursor: "pointer", zIndex: 26, transition: "transform 0.12s", userSelect: "none",
-          }}
-            onPointerDown={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.9)"; }}
-            onPointerUp={(e)   => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
-            onPointerLeave={(e)=> { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
-          >
-            <img src="/KnopkaUdobrenie.webp" alt="Удобрить" draggable={false}
-              style={{ width: "100%", display: "block", userSelect: "none" }} />
-          </button>
-        )}
-
-        {/* Water toast */}
-        {waterMsg && (
-          <div style={{
-            position: "absolute", left: "50%", top: "22%", transform: "translateX(-50%)",
-            background: "rgba(30,100,220,0.92)", color: "#fff",
-            fontSize: "3.5cqw", fontWeight: "700",
-            borderRadius: "3cqw", padding: "1.5cqw 3cqw",
-            whiteSpace: "nowrap", zIndex: 40, pointerEvents: "none",
-            boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
-          }}>💧 Деревья политы!</div>
+        {/* Main notification popup (task / achievement) */}
+        {showNotif && (
+          <MainNotification onDone={() => setShowNotif(false)} />
         )}
 
         <ArrowBtn direction="left"  onClick={() => setPersisted((s) => ({ ...s, currentPlotIdx: Math.max(0, s.currentPlotIdx - 1) }))} visible={currentPlotIdx > 0} />
