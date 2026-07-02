@@ -568,20 +568,21 @@ function SoundButton() {
 interface HarvestPop { id: number; amount: number }
 
 function HarvestPopLabel({ amount, onDone }: { amount: number; onDone: () => void }) {
-  useEffect(() => { const t = setTimeout(onDone, 1600); return () => clearTimeout(t); }, [onDone]);
+  useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, [onDone]);
   return (
     <div style={{
-      position: "absolute", left: "50%", top: "50%", transform: "translateX(-50%) translateY(-50%)",
-      zIndex: 40, pointerEvents: "none", animation: "harvestImgPop 1.6s ease-out forwards",
-      width: "45cqw",
+      position: "absolute", left: "50%", top: "38%",
+      transform: "translateX(-50%)",
+      zIndex: 40, pointerEvents: "none", animation: "harvestImgPop 3s ease-out forwards",
+      width: "22cqw",
     }}>
       <div style={{ position: "relative", width: "100%" }}>
         <img src="/Plody-SBOR.webp" alt="" draggable={false}
           style={{ width: "100%", display: "block", userSelect: "none" }} />
         <span style={{
           position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: "7cqw", fontWeight: "900", color: "#fff",
-          textShadow: "0 2px 8px rgba(0,0,0,0.9)", lineHeight: 1,
+          fontSize: "3.5cqw", fontWeight: "900", color: "#fff",
+          textShadow: "0 1px 4px rgba(0,0,0,0.9)", lineHeight: 1,
         }}>+{fmt(amount)}</span>
       </div>
     </div>
@@ -590,13 +591,13 @@ function HarvestPopLabel({ amount, onDone }: { amount: number; onDone: () => voi
 
 /* Falling drops overlay on tree crown */
 function DropsEffect({ src, onDone }: { src: string; onDone: () => void }) {
-  useEffect(() => { const t = setTimeout(onDone, 2200); return () => clearTimeout(t); }, [onDone]);
-  const drops = Array.from({ length: 12 }, (_, i) => ({
+  useEffect(() => { const t = setTimeout(onDone, 4200); return () => clearTimeout(t); }, [onDone]);
+  const drops = Array.from({ length: 28 }, (_, i) => ({
     id: i,
-    left: 20 + Math.random() * 60,
-    delay: Math.random() * 0.8,
-    duration: 0.8 + Math.random() * 0.6,
-    size: 6 + Math.random() * 5,
+    left: Math.random() * 92,
+    delay: Math.random() * 2.0,
+    duration: 1.0 + Math.random() * 0.8,
+    size: 4 + Math.random() * 4,
   }));
   return (
     <div style={{
@@ -607,7 +608,7 @@ function DropsEffect({ src, onDone }: { src: string; onDone: () => void }) {
         <div key={d.id} style={{
           position: "absolute",
           left: `${d.left}%`,
-          top: `${5 + Math.random() * 25}%`,
+          top: `${Math.random() * 30}%`,
           width: `${d.size}cqw`,
           animation: `dropFall ${d.duration}s ${d.delay}s ease-in both`,
         }}>
@@ -897,15 +898,16 @@ function Game() {
     <>
       <style>{`
         @keyframes harvestImgPop {
-          0%   { opacity:1; transform:translateX(-50%) translateY(-50%) scale(0.8); }
-          15%  { opacity:1; transform:translateX(-50%) translateY(-60%) scale(1.1); }
-          60%  { opacity:1; transform:translateX(-50%) translateY(-70%) scale(1); }
-          100% { opacity:0; transform:translateX(-50%) translateY(-95%) scale(0.9); }
+          0%   { opacity:0; transform:translateX(-50%) scale(0.7); }
+          10%  { opacity:1; transform:translateX(-50%) scale(1.12); }
+          25%  { opacity:1; transform:translateX(-50%) scale(1) translateY(0); }
+          80%  { opacity:1; transform:translateX(-50%) translateY(-22cqw) scale(1); }
+          100% { opacity:0; transform:translateX(-50%) translateY(-30cqw) scale(0.9); }
         }
         @keyframes dropFall {
           0%   { opacity:1; transform:translateY(0); }
-          80%  { opacity:0.7; transform:translateY(18cqw); }
-          100% { opacity:0; transform:translateY(24cqw); }
+          75%  { opacity:0.8; transform:translateY(22cqw); }
+          100% { opacity:0; transform:translateY(30cqw); }
         }
         @keyframes notifPop {
           0%   { opacity:0; transform:translateX(-50%) scale(0.7); }
